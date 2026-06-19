@@ -1,0 +1,55 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, sans-serif;
+  font-size: 14px;
+  line-height: 20px;
+  background-color: #F7F4EF;
+  color: #2B2621;
+}
+
+/* ── Scrollbar ─────────────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #D9D1C7; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #C8BEB2; }
+
+/* ── Focus ring ─────────────────────────────────────────────────────────── */
+:focus-visible {
+  outline: 2px solid #7B5A43;
+  outline-offset: 2px;
+}
+
+/* ── Selection ──────────────────────────────────────────────────────────── */
+::selection {
+  background-color: #E8D9CB;
+  color: #2B2621;
+}
+
+/* ── Legacy component helpers (used by some inline class references) ────── */
+@layer components {
+  .field-label {
+    @apply block text-xs font-medium text-ink-muted mb-1;
+  }
+  .field-hint {
+    @apply text-xs text-ink-faint mt-1;
+  }
+  .field-error {
+    @apply text-xs text-danger mt-1;
+  }
+}

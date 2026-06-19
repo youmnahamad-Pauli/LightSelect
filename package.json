@@ -1,0 +1,11 @@
+{
+  "name": "lightselect",
+  "private": true,
+  "scripts": {
+    "dev:api": "pnpm --filter @lightselect/api dev",
+    "dev:web": "pnpm --filter @lightselect/web dev"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.5"
+  }
+}
