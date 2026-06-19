@@ -12,6 +12,7 @@ import { eq, asc } from 'drizzle-orm';
 import { db } from '../db/client';
 import { export_package_items, export_package_boq_items } from '../db/schema/exports';
 import type { ChecklistSnapshot, BoqSnapshot } from './export-snapshot';
+import type { LuminaireComplianceBlock, ComplianceVerdict } from './compliance-statement';
 
 // ─── Branding ─────────────────────────────────────────────────────────────
 
@@ -97,6 +98,37 @@ function complianceLabel(score: number | null): string {
 
 function clamp(str: string, maxChars: number): string {
   return str.length > maxChars ? str.slice(0, maxChars - 1) + '…' : str;
+}
+
+// ─── Compliance table layout ───────────────────────────────────────────────
+
+const CS_COLS = [
+  { header: 'Attribute',      width: 110   },
+  { header: 'Priority',       width: 50    },
+  { header: 'Specified',      width: 90    },
+  { header: 'Proposed',       width: 90    },
+  { header: 'Verdict',        width: 155.28 },
+] as const;
+
+const CS_ROW_H = 15;
+const CS_HDR_H = 16;
+
+function verdictTextPdf(verdict: ComplianceVerdict): string {
+  switch (verdict) {
+    case 'comply':              return '✓  Comply';
+    case 'comply_with_comment': return '~  Review';
+    case 'deviation':           return '✗  Deviation';
+    case 'missing':             return '—  Missing';
+  }
+}
+
+function verdictColorPdf(verdict: ComplianceVerdict): string {
+  switch (verdict) {
+    case 'comply':              return C.success;
+    case 'comply_with_comment': return '#1565C0';
+    case 'deviation':           return C.danger;
+    case 'missing':             return C.warning;
+  }
 }
 
 type Doc = InstanceType<typeof PDFDocument>;
@@ -222,6 +254,8 @@ export interface PdfGeneratorInput {
   boqSnapshot: BoqSnapshot;
   /** Optional consultant branding. Null fields fall back to LightSelect defaults. */
   branding?: PdfBranding | null;
+  /** Per-luminaire compliance blocks. Null or empty → section is omitted. */
+  complianceBlocks?: LuminaireComplianceBlock[] | null;
 }
 
 export async function generatePackagePdf(input: PdfGeneratorInput): Promise<Buffer> {
@@ -367,6 +401,144 @@ export async function generatePackagePdf(input: PdfGeneratorInput): Promise<Buff
       }
     }
     doc.text('', M, doc.y + 4);
+
+    // ── Compliance Statement ───────────────────────────────────────────────
+
+    const { complianceBlocks } = input;
+    const csBlocks = (complianceBlocks ?? []).filter((b) => b.rows.length > 0);
+
+    if (csBlocks.length > 0) {
+      if (doc.y + SECTION_HDR_H + CS_HDR_H + CS_ROW_H * 2 > FOOTER_Y - 20) doc.addPage();
+      secHeader('COMPLIANCE STATEMENT — SPECIFIED vs PROPOSED');
+
+      for (let bi = 0; bi < csBlocks.length; bi++) {
+        const block = csBlocks[bi];
+
+        // Block type header
+        if (doc.y + CS_HDR_H + CS_ROW_H * 3 > FOOTER_Y - 20) doc.addPage();
+        const typeY = doc.y;
+        doc.rect(M, typeY, CW, CS_HDR_H).fill(headerColor);
+        doc.fill(C.white).font('Helvetica-Bold').fontSize(9.5)
+           .text(`Type ${bi + 1} — ${clamp(block.description, 60)}`, M + 6, typeY + (CS_HDR_H - 9) / 2 + 1,
+             { width: CW - 80, lineBreak: false });
+        doc.fill(C.white).font('Helvetica').fontSize(8)
+           .text(`Qty: ${block.quantity} ${block.unit}`, M, typeY + (CS_HDR_H - 8) / 2 + 1,
+             { width: CW - 6, align: 'right', lineBreak: false });
+        doc.fill(C.ink).font('Helvetica').fontSize(9);
+        doc.text('', M, typeY + CS_HDR_H + 3);
+
+        // Product + source line
+        doc.fill(C.muted).font('Helvetica-Oblique').fontSize(8)
+           .text(`Proposed: ${block.product_label}`, M, doc.y, { lineBreak: false });
+        const srcNote = block.source === 'comparison_run' ? ' · Run with overrides' : ' · Live from BOQ profile';
+        doc.fill(C.faint).font('Helvetica').fontSize(7.5)
+           .text(srcNote, M + 4, doc.y, { lineBreak: false });
+        doc.fill(C.ink).font('Helvetica').fontSize(9);
+        doc.text('', M, doc.y + 13);
+
+        // ── Compliance table ───────────────────────────────────────────────
+
+        const drawCsHeader = (atY: number) => {
+          let x = M;
+          doc.rect(M, atY, CW, CS_HDR_H).fill(headerColor);
+          for (const col of CS_COLS) {
+            doc.fill(C.white).font('Helvetica-Bold').fontSize(7.5)
+               .text(col.header, x + 3, atY + (CS_HDR_H - 7.5) / 2 + 0.5,
+                 { width: col.width - 6, lineBreak: false });
+            x += col.width;
+          }
+          doc.fill(C.ink).font('Helvetica');
+        };
+
+        let tableY = doc.y;
+        drawCsHeader(tableY);
+        tableY += CS_HDR_H;
+        doc.text('', M, tableY);
+
+        for (const [ri, row] of block.rows.entries()) {
+          if (tableY + CS_ROW_H > FOOTER_Y - 20) {
+            doc.addPage();
+            tableY = M + 5;
+            doc.fill(C.muted).font('Helvetica-Oblique').fontSize(7)
+               .text(`Type ${bi + 1} continued`, M, tableY);
+            tableY += 11;
+            doc.text('', M, tableY);
+            drawCsHeader(tableY);
+            tableY += CS_HDR_H;
+            doc.text('', M, tableY);
+          }
+
+          const bg = ri % 2 === 1 ? C.altRow : '#FFFFFF';
+          doc.rect(M, tableY, CW, CS_ROW_H).fill(bg);
+          const textY = tableY + (CS_ROW_H - 7.5) / 2 + 0.5;
+
+          let x = M;
+
+          // Attribute
+          const attrBold = row.priority === 'mandatory';
+          doc.fill(C.ink).font(attrBold ? 'Helvetica-Bold' : 'Helvetica').fontSize(7.5)
+             .text(clamp(row.attribute_label, 22), x + 3, textY,
+               { width: CS_COLS[0].width - 6, lineBreak: false });
+          x += CS_COLS[0].width;
+
+          // Priority
+          const priColor = row.priority === 'mandatory' ? C.ink : C.muted;
+          doc.fill(priColor).font('Helvetica').fontSize(7)
+             .text(row.priority.toUpperCase(), x + 3, textY,
+               { width: CS_COLS[1].width - 6, lineBreak: false });
+          x += CS_COLS[1].width;
+
+          // Specified
+          doc.fill(C.muted).font('Helvetica').fontSize(7.5)
+             .text(clamp(row.specified_display, 18), x + 3, textY,
+               { width: CS_COLS[2].width - 6, lineBreak: false });
+          x += CS_COLS[2].width;
+
+          // Proposed
+          const propColor = row.proposed_value ? C.ink : C.faint;
+          doc.fill(propColor).font('Helvetica').fontSize(7.5)
+             .text(clamp(row.proposed_value ?? '—', 18), x + 3, textY,
+               { width: CS_COLS[3].width - 6, lineBreak: false });
+          x += CS_COLS[3].width;
+
+          // Verdict (coloured text; no separate background needed — row bg shows)
+          const vColor = verdictColorPdf(row.verdict);
+          const vBold  = row.verdict === 'deviation' || row.verdict === 'missing';
+          let vText = verdictTextPdf(row.verdict);
+          if (row.is_overridden) vText += ' (OVR)';
+          doc.fill(vColor).font(vBold ? 'Helvetica-Bold' : 'Helvetica').fontSize(7.5)
+             .text(vText, x + 3, textY, { width: CS_COLS[4].width - 6, lineBreak: false });
+
+          // Deviation reason as a sub-line if it fits in the same row height
+          if ((row.verdict === 'deviation' || row.verdict === 'missing') && row.deviation_reason) {
+            doc.fill(C.faint).font('Helvetica').fontSize(6.5)
+               .text(clamp(row.deviation_reason, 40), x + 3, textY + 8,
+                 { width: CS_COLS[4].width - 6, lineBreak: false });
+          }
+
+          doc.fill(C.ink).font('Helvetica');
+          tableY += CS_ROW_H;
+          doc.text('', M, tableY);
+        }
+
+        // Summary line
+        if (tableY + 14 > FOOTER_Y - 20) { doc.addPage(); tableY = M + 5; doc.text('', M, tableY); }
+        const hasIssues = block.deviated_count > 0 || block.missing_count > 0;
+        doc.rect(M, tableY, CW, 14).fill(C.brandLight);
+        const summaryStr =
+          `✓ Comply: ${block.compliant_count}     ` +
+          `~ Review: ${block.review_needed_count}     ` +
+          `✗ Deviation: ${block.deviated_count}     ` +
+          `— Missing: ${block.missing_count}`;
+        doc.fill(hasIssues ? C.danger : C.success).font('Helvetica-Bold').fontSize(8)
+           .text(summaryStr, M + 6, tableY + 3, { width: CW - 12, lineBreak: false });
+        doc.fill(C.ink).font('Helvetica').fontSize(9);
+        tableY += 14;
+        doc.text('', M, tableY + 8);
+      }
+
+      doc.text('', M, doc.y + 4);
+    }
 
     // ── Section composition ────────────────────────────────────────────────
 

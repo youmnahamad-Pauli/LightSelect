@@ -21,8 +21,10 @@ import { config } from '../config';
 import { generatePackagePdf } from './export-pdf';
 import { generateExportZip } from './export-zip';
 import { consultant_templates } from '../db/schema/projects';
+import { buildComplianceBlocks } from './compliance-statement';
 import type { ChecklistSnapshot, BoqSnapshot } from './export-snapshot';
 import type { PdfBranding } from './export-pdf';
+import type { LuminaireComplianceBlock, ComplianceVerdict } from './compliance-statement';
 
 // ─── Brand colours ─────────────────────────────────────────────────────────
 const BRAND_ARGB      = 'FF7B5A43';
@@ -34,6 +36,17 @@ const COMP_STRONG_ARGB     = 'FF2D6A4F';
 const COMP_ACCEPTABLE_ARGB = 'FF5E7A5F';
 const COMP_WEAK_ARGB       = 'FFA06A3B';
 const COMP_POOR_ARGB       = 'FFA14B3B';
+
+// ─── Compliance-statement colours ──────────────────────────────────────────
+const CS_COMPLY_BG    = 'FFE8F5E9';
+const CS_COMPLY_TEXT  = 'FF2D6A4F';
+const CS_REVIEW_BG    = 'FFE3F2FD';
+const CS_REVIEW_TEXT  = 'FF1565C0';
+const CS_DEV_BG       = 'FFFDE8E8';
+const CS_DEV_TEXT     = 'FFC62828';
+const CS_MISS_BG      = 'FFFFF3E0';
+const CS_MISS_TEXT    = 'FFE65100';
+const CS_OVERRIDE_TEXT = 'FF795548';
 
 // ─── Compliance helpers ────────────────────────────────────────────────────
 
@@ -158,6 +171,171 @@ function numFmt(cell: ExcelJS.Cell, value: number | null | undefined, format = '
   else { cell.value = null; }
 }
 
+// ─── Compliance-statement helpers ─────────────────────────────────────────
+
+function verdictLabel(verdict: ComplianceVerdict): string {
+  switch (verdict) {
+    case 'comply':              return '✓  Comply';
+    case 'comply_with_comment': return '~  Review';
+    case 'deviation':           return '✗  Deviation';
+    case 'missing':             return '—  Missing';
+  }
+}
+
+function applyVerdictCell(cell: ExcelJS.Cell, verdict: ComplianceVerdict): void {
+  const styles: Record<ComplianceVerdict, { bg: string; text: string }> = {
+    comply:              { bg: CS_COMPLY_BG, text: CS_COMPLY_TEXT },
+    comply_with_comment: { bg: CS_REVIEW_BG, text: CS_REVIEW_TEXT },
+    deviation:           { bg: CS_DEV_BG,    text: CS_DEV_TEXT   },
+    missing:             { bg: CS_MISS_BG,   text: CS_MISS_TEXT  },
+  };
+  const s = styles[verdict];
+  cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: s.bg } };
+  cell.font = {
+    bold: verdict === 'deviation' || verdict === 'missing',
+    color: { argb: s.text },
+    size: 9,
+  };
+  cell.alignment = { horizontal: 'center', vertical: 'middle' };
+}
+
+/**
+ * Adds "Compliance Statement" as sheet 3 in the workbook.
+ * One block per BOQ luminaire type that has requirements.
+ * Silently skips if blocks is empty.
+ */
+function addComplianceSheet(
+  wb: ExcelJS.Workbook,
+  blocks: LuminaireComplianceBlock[],
+): void {
+  const relevant = blocks.filter((b) => b.rows.length > 0);
+  if (relevant.length === 0) return;
+
+  const ws = wb.addWorksheet('Compliance Statement', {
+    pageSetup: { orientation: 'landscape', fitToPage: true, fitToWidth: 1 },
+  });
+
+  ws.columns = [
+    { key: 'no',        width: 5  },
+    { key: 'attribute', width: 24 },
+    { key: 'priority',  width: 11 },
+    { key: 'specified', width: 22 },
+    { key: 'proposed',  width: 22 },
+    { key: 'verdict',   width: 20 },
+    { key: 'notes',     width: 38 },
+  ];
+
+  // Sheet title row
+  const titleRow = ws.addRow(['COMPLIANCE STATEMENT — SPECIFIED vs PROPOSED']);
+  ws.mergeCells(`A${titleRow.number}:G${titleRow.number}`);
+  titleRow.height = 24;
+  titleRow.getCell(1).font  = { bold: true, size: 12, color: { argb: HEADER_TEXT_ARGB } };
+  titleRow.getCell(1).fill  = { type: 'pattern', pattern: 'solid', fgColor: { argb: BRAND_ARGB } };
+  titleRow.getCell(1).alignment = { vertical: 'middle' };
+  ws.addRow([]);
+
+  for (let blockIdx = 0; blockIdx < relevant.length; blockIdx++) {
+    const block = relevant[blockIdx];
+    const typeNum = blockIdx + 1;
+
+    // ── Block header ───────────────────────────────────────────────────────
+    const hdRow = ws.addRow([`Type ${typeNum} — ${block.description}`]);
+    ws.mergeCells(`A${hdRow.number}:G${hdRow.number}`);
+    hdRow.height = 20;
+    hdRow.getCell(1).font      = { bold: true, size: 10.5, color: { argb: HEADER_TEXT_ARGB } };
+    hdRow.getCell(1).fill      = { type: 'pattern', pattern: 'solid', fgColor: { argb: BRAND_ARGB } };
+    hdRow.getCell(1).alignment = { vertical: 'middle' };
+
+    // ── Product + qty row ──────────────────────────────────────────────────
+    const prodRow = ws.addRow([`Proposed: ${block.product_label}`]);
+    ws.mergeCells(`A${prodRow.number}:F${prodRow.number}`);
+    prodRow.height = 16;
+    prodRow.getCell(1).font  = { size: 9, italic: true, color: { argb: 'FF5D4037' } };
+    prodRow.getCell(1).fill  = { type: 'pattern', pattern: 'solid', fgColor: { argb: ALT_ROW_ARGB } };
+    prodRow.getCell(7).value = `Qty: ${block.quantity} ${block.unit}`;
+    prodRow.getCell(7).font  = { size: 9, italic: true, color: { argb: 'FF5D4037' } };
+    prodRow.getCell(7).fill  = { type: 'pattern', pattern: 'solid', fgColor: { argb: ALT_ROW_ARGB } };
+    prodRow.getCell(7).alignment = { horizontal: 'right' };
+
+    // ── Source note ────────────────────────────────────────────────────────
+    const sourceLabel = block.source === 'comparison_run'
+      ? 'Source: Stored comparison run (includes manual overrides)'
+      : 'Source: Live calculation from BOQ spec profile';
+    const srcRow = ws.addRow([sourceLabel]);
+    ws.mergeCells(`A${srcRow.number}:G${srcRow.number}`);
+    srcRow.height = 13;
+    srcRow.getCell(1).font = { size: 7.5, italic: true, color: { argb: 'FF8A8178' } };
+
+    // ── Table header ───────────────────────────────────────────────────────
+    const tblHdr = ws.addRow(['#', 'Attribute', 'Priority', 'Specified', 'Proposed Value', 'Verdict', 'Notes / Reason']);
+    applyHeaderStyle(tblHdr);
+    tblHdr.getCell(1).alignment = { horizontal: 'center', vertical: 'middle' };
+    tblHdr.getCell(3).alignment = { horizontal: 'center', vertical: 'middle' };
+    tblHdr.getCell(6).alignment = { horizontal: 'center', vertical: 'middle' };
+
+    // ── Data rows ──────────────────────────────────────────────────────────
+    for (const [i, row] of block.rows.entries()) {
+      const notesText = row.is_overridden
+        ? `Overridden${row.override_notes ? ': ' + row.override_notes : ''}`
+        : (row.deviation_reason ?? '');
+
+      const dataRow = ws.addRow([
+        i + 1,
+        row.attribute_label,
+        row.priority.toUpperCase(),
+        row.specified_display,
+        row.proposed_value ?? '—',
+        verdictLabel(row.verdict),
+        notesText,
+      ]);
+
+      dataRow.height = 15;
+      dataRow.getCell(1).alignment = { horizontal: 'center', vertical: 'middle' };
+      dataRow.getCell(3).alignment = { horizontal: 'center', vertical: 'middle' };
+      dataRow.getCell(4).alignment = { horizontal: 'center', vertical: 'middle' };
+      dataRow.getCell(5).alignment = { horizontal: 'center', vertical: 'middle' };
+
+      // Priority column: bold + dark for mandatory
+      if (row.priority === 'mandatory') {
+        dataRow.getCell(3).font = { bold: true, size: 9 };
+      } else {
+        dataRow.getCell(3).font = { size: 9, color: { argb: '8A8178' } };
+      }
+
+      // Alt-row base fill (applied first so verdict cell can override it)
+      applyAltRowFill(dataRow, i);
+
+      // Verdict cell (overrides alt-row fill)
+      applyVerdictCell(dataRow.getCell(6), row.verdict);
+
+      // Override indicator in notes column
+      if (row.is_overridden) {
+        dataRow.getCell(7).font = { size: 8.5, italic: true, color: { argb: CS_OVERRIDE_TEXT } };
+      }
+    }
+
+    // ── Summary row ────────────────────────────────────────────────────────
+    const hasIssues = block.deviated_count > 0 || block.missing_count > 0;
+    const sumRow = ws.addRow([
+      '',
+      'SUMMARY',
+      '',
+      `✓ Comply: ${block.compliant_count}`,
+      `~ Review: ${block.review_needed_count}`,
+      `✗ Dev: ${block.deviated_count}   — Missing: ${block.missing_count}`,
+      '',
+    ]);
+    applyTotalsStyle(sumRow);
+    sumRow.getCell(4).font = { bold: true, color: { argb: CS_COMPLY_TEXT } };
+    sumRow.getCell(5).font = { bold: true, color: { argb: CS_REVIEW_TEXT } };
+    sumRow.getCell(6).font = { bold: true, color: { argb: hasIssues ? CS_DEV_TEXT : CS_COMPLY_TEXT } };
+
+    ws.addRow([]); // gap between types
+  }
+
+  ws.views = [{ state: 'frozen', xSplit: 0, ySplit: 1 }];
+}
+
 // ─── XLSX generator ────────────────────────────────────────────────────────
 
 async function generateBoqXlsx(
@@ -166,6 +344,7 @@ async function generateBoqXlsx(
   activeSpec: { title: string; version_label: string } | null,
   checklistSnapshot: ChecklistSnapshot,
   boqSnapshot: BoqSnapshot,
+  complianceBlocks: LuminaireComplianceBlock[] | null,
 ): Promise<Buffer> {
   const boqRows = await db
     .select()
@@ -352,6 +531,9 @@ async function generateBoqXlsx(
   addSummaryRow('Weak (<55%)',        'Product has significant deviations; review recommended');
   addSummaryRow('No data',            'No product assigned or no comparison run yet');
 
+  // ── Sheet 3: Compliance Statement (omitted if no compliance data) ─────────
+  if (complianceBlocks) addComplianceSheet(wb, complianceBlocks);
+
   return Buffer.from(await wb.xlsx.writeBuffer());
 }
 
@@ -413,7 +595,10 @@ export async function generateArtifact(input: ArtifactInput): Promise<ArtifactOu
 
   // ── 1. Generate XLSX (primary) ─────────────────────────────────────────
 
-  const xlsxBuffer = await generateBoqXlsx(exportPackageId, projectMeta, activeSpec, input.checklistSnapshot, input.boqSnapshot);
+  // Build compliance blocks once; passed to both XLSX and PDF generators
+  const complianceBlocks = await buildComplianceBlocks(projectId, input.activeSpecDocumentId);
+
+  const xlsxBuffer = await generateBoqXlsx(exportPackageId, projectMeta, activeSpec, input.checklistSnapshot, input.boqSnapshot, complianceBlocks);
   const xlsxFileName = 'boq-schedule.xlsx';
   fs.writeFileSync(path.join(dir, xlsxFileName), xlsxBuffer);
 
@@ -435,6 +620,7 @@ export async function generateArtifact(input: ArtifactInput): Promise<ArtifactOu
       checklistSnapshot: input.checklistSnapshot,
       boqSnapshot: input.boqSnapshot,
       branding: pdfBranding,
+      complianceBlocks,
     });
 
     const pdfFileName = 'package-summary.pdf';

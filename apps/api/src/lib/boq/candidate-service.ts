@@ -149,7 +149,9 @@ export async function suggestCandidates(
   // 2. current project first on ties
   // 3. preferred flag as secondary boost
   scored.sort((a, b) => {
-    if (b.match_score !== a.match_score) return b.match_score - a.match_score;
+    const bScore = b.match_score ?? 0;
+    const aScore = a.match_score ?? 0;
+    if (bScore !== aScore) return bScore - aScore;
     // On tie: current project products first
     if (a.is_from_current_project !== b.is_from_current_project) {
       return a.is_from_current_project ? -1 : 1;
