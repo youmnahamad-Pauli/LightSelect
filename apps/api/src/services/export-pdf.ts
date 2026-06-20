@@ -8,11 +8,9 @@
 import PDFDocument from 'pdfkit';
 import https from 'https';
 import http from 'http';
-import { eq, asc } from 'drizzle-orm';
-import { db } from '../db/client';
-import { export_package_items, export_package_boq_items } from '../db/schema/exports';
 import type { ChecklistSnapshot, BoqSnapshot } from './export-snapshot';
 import type { LuminaireComplianceBlock, ComplianceVerdict } from './compliance-statement';
+import type { ExportPackageItem, ExportPackageBoqItem } from '../db/schema/exports';
 
 // ─── Branding ─────────────────────────────────────────────────────────────
 
@@ -242,7 +240,6 @@ function drawPageFooter(doc: Doc, pageNum: number, totalPages: number, timestamp
 // ─── Main generator ────────────────────────────────────────────────────────
 
 export interface PdfGeneratorInput {
-  exportPackageId: string;
   project: {
     project_name: string;
     client_name: string | null;
@@ -256,28 +253,24 @@ export interface PdfGeneratorInput {
   branding?: PdfBranding | null;
   /** Per-luminaire compliance blocks. Null or empty → section is omitted. */
   complianceBlocks?: LuminaireComplianceBlock[] | null;
+  /** Pre-fetched section-composition rows (formerly queried by exportPackageId internally). */
+  packageSectionItems: ExportPackageItem[];
+  /** Pre-fetched BOQ schedule rows (formerly queried by exportPackageId internally). */
+  packageBoqItems: ExportPackageBoqItem[];
 }
 
 export async function generatePackagePdf(input: PdfGeneratorInput): Promise<Buffer> {
-  const { exportPackageId, project, activeSpec, checklistSnapshot, boqSnapshot, branding } = input;
+  const { project, activeSpec, checklistSnapshot, boqSnapshot, branding,
+          packageSectionItems, packageBoqItems } = input;
 
   // Resolve branding — null/missing fields fall back to defaults
   const headerColor   = branding?.brandColor ?? C.brand;
   const headerTitle   = branding?.headerTitle ?? 'LIGHTSELECT — EXPORT PACKAGE SUMMARY';
   const logoBuffer    = branding?.logoUrl ? await fetchLogoBuffer(branding.logoUrl) : null;
 
-  // Load snapshot data
-  const sectionItems = await db
-    .select()
-    .from(export_package_items)
-    .where(eq(export_package_items.export_package_id, exportPackageId))
-    .orderBy(asc(export_package_items.section_order), asc(export_package_items.sort_order));
-
-  const boqRows = await db
-    .select()
-    .from(export_package_boq_items)
-    .where(eq(export_package_boq_items.export_package_id, exportPackageId))
-    .orderBy(asc(export_package_boq_items.sort_order));
+  // Snapshot data now comes from ExportSource (pre-fetched by LegacyExportSource)
+  const sectionItems = packageSectionItems;
+  const boqRows      = packageBoqItems;
 
   // Group section items by section
   const sectionMap = new Map<string, {

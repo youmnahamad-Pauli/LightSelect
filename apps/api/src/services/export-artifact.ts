@@ -1,30 +1,24 @@
 /**
  * Export artifact orchestrator.
  *
- * Priority 13: XLSX primary artifact.
- * Priority 16: PDF secondary artifact (stored in export_package_artifacts).
- *
- * Upgrade path for future renderers:
- *   - Add a generator function and call it here.
- *   - Store results via storeArtifact().
- *   - No DB schema changes needed.
+ * Phase 0 seam: generateArtifact() now routes through ExportSource so the
+ * renderers (generateBoqXlsx, generatePackagePdf) are pure functions of
+ * their inputs — no internal DB calls. Behaviour is identical.
  */
 import fs from 'fs';
 import path from 'path';
 import ExcelJS from 'exceljs';
 import { eq, asc } from 'drizzle-orm';
 import { db } from '../db/client';
-import { export_package_items, export_package_boq_items, export_package_artifacts } from '../db/schema/exports';
-import { projects } from '../db/schema/projects';
-import { project_spec_documents } from '../db/schema/spec';
+import { export_package_artifacts } from '../db/schema/exports';
 import { config } from '../config';
 import { generatePackagePdf } from './export-pdf';
 import { generateExportZip } from './export-zip';
-import { consultant_templates } from '../db/schema/projects';
-import { buildComplianceBlocks } from './compliance-statement';
-import type { ChecklistSnapshot, BoqSnapshot } from './export-snapshot';
-import type { PdfBranding } from './export-pdf';
+import { LegacyExportSource } from './export-source';
+import type { ArtifactInput, ExportSource } from './export-source';
+import type { ExportPackageItem, ExportPackageBoqItem } from '../db/schema/exports';
 import type { LuminaireComplianceBlock, ComplianceVerdict } from './compliance-statement';
+import type { ChecklistSnapshot, BoqSnapshot } from './export-snapshot';
 
 // ─── Brand colours ─────────────────────────────────────────────────────────
 const BRAND_ARGB      = 'FF7B5A43';
@@ -68,15 +62,9 @@ function complianceARGB(score: number | null): string | null {
 }
 
 // ─── Artifact I/O ─────────────────────────────────────────────────────────
-
-export interface ArtifactInput {
-  exportPackageId: string;
-  projectId: string;
-  orgId: string;
-  checklistSnapshot: ChecklistSnapshot;
-  boqSnapshot: BoqSnapshot;
-  activeSpecDocumentId: string | null;
-}
+// ArtifactInput is now canonical in export-source.ts; re-exported here for
+// backward compat with existing import sites.
+export type { ArtifactInput } from './export-source';
 
 export interface ArtifactOutput {
   /** Primary artifact type (XLSX). Kept on export_packages for backward compat. */
@@ -338,25 +326,20 @@ function addComplianceSheet(
 
 // ─── XLSX generator ────────────────────────────────────────────────────────
 
-async function generateBoqXlsx(
-  exportPackageId: string,
+/**
+ * Renders the XLSX workbook from pre-resolved data.
+ * Pure function — no DB access. Exported for testing.
+ */
+export async function generateBoqXlsx(
   projectMeta: { project_name: string; client_name: string | null; project_code: string | null; revision_label: string | null },
   activeSpec: { title: string; version_label: string } | null,
   checklistSnapshot: ChecklistSnapshot,
   boqSnapshot: BoqSnapshot,
   complianceBlocks: LuminaireComplianceBlock[] | null,
+  // Snapshot rows — pre-fetched by LegacyExportSource (formerly queried internally)
+  boqRows: ExportPackageBoqItem[],
+  sectionItems: ExportPackageItem[],
 ): Promise<Buffer> {
-  const boqRows = await db
-    .select()
-    .from(export_package_boq_items)
-    .where(eq(export_package_boq_items.export_package_id, exportPackageId))
-    .orderBy(asc(export_package_boq_items.sort_order));
-
-  const sectionItems = await db
-    .select()
-    .from(export_package_items)
-    .where(eq(export_package_items.export_package_id, exportPackageId))
-    .orderBy(asc(export_package_items.section_order), asc(export_package_items.sort_order));
 
   const wb = new ExcelJS.Workbook();
   wb.creator = 'LightSelect';
@@ -537,75 +520,48 @@ async function generateBoqXlsx(
   return Buffer.from(await wb.xlsx.writeBuffer());
 }
 
-// ─── Main entry point ──────────────────────────────────────────────────────
+// ─── Main entry points ─────────────────────────────────────────────────────
 
+/**
+ * Public API — unchanged signature.
+ * Resolves the ExportSource via LegacyExportSource then delegates to
+ * generateArtifactFromSource. Behaviour is identical to the pre-seam code.
+ */
 export async function generateArtifact(input: ArtifactInput): Promise<ArtifactOutput> {
-  const { exportPackageId, projectId, orgId } = input;
+  const source = await LegacyExportSource.resolve(input);
+  return generateArtifactFromSource(source);
+}
 
-  const [project] = await db
-    .select({
-      project_name: projects.project_name,
-      client_name: projects.client_name,
-      project_code: projects.project_code,
-      revision_label: projects.revision_label,
-      consultant_template_id: projects.consultant_template_id,
-    })
-    .from(projects).where(eq(projects.id, projectId)).limit(1);
-
-  // Load consultant branding for PDF header
-  let pdfBranding: PdfBranding = { headerTitle: 'LIGHTSELECT — EXPORT PACKAGE SUMMARY' };
-  if (project?.consultant_template_id) {
-    const [tmpl] = await db
-      .select({
-        template_name: consultant_templates.template_name,
-        logo_url: consultant_templates.logo_url,
-        brand_color: consultant_templates.brand_color,
-      })
-      .from(consultant_templates)
-      .where(eq(consultant_templates.id, project.consultant_template_id))
-      .limit(1);
-    if (tmpl) {
-      pdfBranding = {
-        headerTitle: tmpl.template_name
-          ? `${tmpl.template_name.toUpperCase()} — EXPORT PACKAGE SUMMARY`
-          : 'LIGHTSELECT — EXPORT PACKAGE SUMMARY',
-        logoUrl: tmpl.logo_url,
-        brandColor: tmpl.brand_color,
-      };
-    }
-  }
-
-  let activeSpec: { title: string; version_label: string } | null = null;
-  if (input.activeSpecDocumentId) {
-    const [doc] = await db
-      .select({ title: project_spec_documents.title, version_label: project_spec_documents.version_label })
-      .from(project_spec_documents).where(eq(project_spec_documents.id, input.activeSpecDocumentId)).limit(1);
-    activeSpec = doc ?? null;
-  }
+/**
+ * The core renderer — takes a fully-resolved ExportSource, writes files
+ * to disk, persists artifact rows, and returns the primary artifact path.
+ *
+ * Exported for testing: supply fixture ExportSource without touching the DB.
+ */
+export async function generateArtifactFromSource(source: ExportSource): Promise<ArtifactOutput> {
+  const {
+    exportPackageId, orgId,
+    projectMeta, pdfBranding, activeSpec,
+    checklistSnapshot, boqSnapshot,
+    complianceBlocks,
+    packageBoqItems, packageSectionItems,
+  } = source;
 
   const dir = path.join(config.uploadsDir, orgId, 'exports', exportPackageId);
   fs.mkdirSync(dir, { recursive: true });
 
-  const projectMeta = {
-    project_name: project?.project_name ?? 'Unknown Project',
-    client_name: project?.client_name ?? null,
-    project_code: project?.project_code ?? null,
-    revision_label: project?.revision_label ?? null,
-  };
-
   // ── 1. Generate XLSX (primary) ─────────────────────────────────────────
 
-  // Build compliance blocks once; passed to both XLSX and PDF generators
-  const complianceBlocks = await buildComplianceBlocks(projectId, input.activeSpecDocumentId);
-
-  const xlsxBuffer = await generateBoqXlsx(exportPackageId, projectMeta, activeSpec, input.checklistSnapshot, input.boqSnapshot, complianceBlocks);
+  const xlsxBuffer = await generateBoqXlsx(
+    projectMeta, activeSpec, checklistSnapshot, boqSnapshot, complianceBlocks,
+    packageBoqItems, packageSectionItems,
+  );
   const xlsxFileName = 'boq-schedule.xlsx';
   fs.writeFileSync(path.join(dir, xlsxFileName), xlsxBuffer);
 
   const xlsxPath = `${orgId}/exports/${exportPackageId}/${xlsxFileName}`;
   const xlsxUrl  = `/exports/${exportPackageId}/download`;
 
-  // Mirror XLSX into artifacts table (sort_order 0)
   await persistArtifact(exportPackageId, 'xlsx', 'BOQ Workbook', xlsxPath, xlsxUrl, 0);
 
   // ── 2. Generate PDF (secondary) ────────────────────────────────────────
@@ -614,13 +570,14 @@ export async function generateArtifact(input: ArtifactInput): Promise<ArtifactOu
 
   try {
     const pdfBuffer = await generatePackagePdf({
-      exportPackageId,
       project: projectMeta,
       activeSpec,
-      checklistSnapshot: input.checklistSnapshot,
-      boqSnapshot: input.boqSnapshot,
+      checklistSnapshot,
+      boqSnapshot,
       branding: pdfBranding,
       complianceBlocks,
+      packageSectionItems,
+      packageBoqItems,
     });
 
     const pdfFileName = 'package-summary.pdf';
