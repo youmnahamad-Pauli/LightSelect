@@ -26,10 +26,23 @@ const ATTRIBUTE_DEFINITIONS = [
   { name: 'voltage',        label: 'Input Voltage',          group: 'Electrical'  },
   { name: 'dimming',        label: 'Dimming / Driver',       group: 'Electrical'  },
   { name: 'operating_temp', label: 'Operating Temperature',  group: 'Electrical'  },
-  { name: 'lifetime_hours', label: 'Lifetime (hours)',       group: 'Performance' },
-  { name: 'warranty',       label: 'Warranty',               group: 'Performance' },
-  { name: 'accessories',    label: 'Accessories',            group: 'Performance' },
-  { name: 'notes',          label: 'Notes',                  group: 'Performance' },
+  { name: 'lifetime_hours',    label: 'Lifetime (hours)',               group: 'Performance' },
+  { name: 'warranty',          label: 'Warranty',                       group: 'Performance' },
+  { name: 'accessories',       label: 'Accessories',                    group: 'Performance' },
+  { name: 'notes',             label: 'Notes',                          group: 'Performance' },
+  // v3 additions
+  { name: 'watts_per_metre',   label: 'Wattage per metre (W/m)',        group: 'Flexible'    },
+  { name: 'lumens_per_metre',  label: 'Lumens per metre (lm/m)',        group: 'Flexible'    },
+  { name: 'led_per_metre',     label: 'LED density (LED/m)',            group: 'Flexible'    },
+  { name: 'cut_interval',      label: 'Cut interval',                   group: 'Flexible'    },
+  { name: 'max_run',           label: 'Max run length',                 group: 'Flexible'    },
+  { name: 'bend_plane',        label: 'Bend plane',                     group: 'Flexible'    },
+  { name: 'min_bend_radius',   label: 'Min bend radius',                group: 'Flexible'    },
+  { name: 'colour_mode',       label: 'Colour mode',                    group: 'Electrical'  },
+  { name: 'addressability',    label: 'Addressability (static/pixel)',  group: 'Electrical'  },
+  { name: 'pixel_protocol',    label: 'Pixel protocol (SPI/DMX)',       group: 'Electrical'  },
+  { name: 'wash_optic',        label: 'Wash / graze / flood optic',     group: 'Photometric' },
+  { name: 'high_temp_variant', label: 'High-temp variant',              group: 'Performance' },
 ] as const;
 
 type AttributeName = (typeof ATTRIBUTE_DEFINITIONS)[number]['name'];
