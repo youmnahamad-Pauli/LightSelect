@@ -12,8 +12,15 @@
     {
       "idx": 1,
       "version": "7",
-      "when": 1781945683730,
-      "tag": "0001_lumpy_mockingbird",
+      "when": 1781937730841,
+      "tag": "0001_sleepy_peter_quill",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1781977615597,
+      "tag": "0002_registry_tables",
       "breakpoints": true
     }
   ]

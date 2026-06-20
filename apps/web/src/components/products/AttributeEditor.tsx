@@ -39,6 +39,24 @@ export const STANDARD_ATTRIBUTES: { name: string; label: string; group: string }
   { name: 'warranty', label: 'Warranty', group: 'Performance' },
   { name: 'accessories', label: 'Accessories', group: 'Performance' },
   { name: 'notes', label: 'Notes', group: 'Performance' },
+  // ─── v3 additions ─────────────────────────────────────────────────────────
+  // Flexible LED Tapes & Flex Neon (per-metre performance)
+  { name: 'watts_per_metre', label: 'Wattage per metre (W/m)', group: 'Flexible' },
+  { name: 'lumens_per_metre', label: 'Lumens per metre (lm/m)', group: 'Flexible' },
+  { name: 'led_per_metre', label: 'LED density (LED/m)', group: 'Flexible' },
+  { name: 'cut_interval', label: 'Cut interval', group: 'Flexible' },
+  { name: 'max_run', label: 'Max run length', group: 'Flexible' },
+  // Flex Neon bending
+  { name: 'bend_plane', label: 'Bend plane', group: 'Flexible' },
+  { name: 'min_bend_radius', label: 'Min bend radius', group: 'Flexible' },
+  // Control / colour
+  { name: 'colour_mode', label: 'Colour mode', group: 'Electrical' },
+  { name: 'addressability', label: 'Addressability (static / pixel)', group: 'Electrical' },
+  { name: 'pixel_protocol', label: 'Pixel protocol (SPI / DMX)', group: 'Electrical' },
+  // Optics
+  { name: 'wash_optic', label: 'Wash / graze / flood optic', group: 'Photometric' },
+  // Thermal
+  { name: 'high_temp_variant', label: 'High-temp variant', group: 'Performance' },
 ];
 
 // ─── Types ─────────────────────────────────────────────────────────────────

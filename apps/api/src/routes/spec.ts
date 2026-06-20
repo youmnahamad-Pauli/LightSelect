@@ -8,6 +8,7 @@ import {
   spec_version_diffs,
   spec_comparison_runs,
   spec_comparison_results,
+  type RequirementOperator,
 } from '../db/schema/spec';
 import { products, product_attributes } from '../db/schema/products';
 import { projects } from '../db/schema/projects';
@@ -285,7 +286,7 @@ specDocumentRouter.post('/:id/extract', async (req: Request, res: Response, next
 
     if (extracted.length > 0) {
       await db.insert(project_spec_requirements).values(
-        extracted.map((r) => ({ ...r, spec_document_id: req.params.id, status: 'extracted' as const })),
+        extracted.map((r) => ({ ...r, spec_document_id: req.params.id, status: 'extracted' as const, operator: r.operator as RequirementOperator })),
       );
     }
 
