@@ -13,6 +13,7 @@
     "db:setup": "tsx src/db/migrate.ts && tsx src/db/seed.ts",
     "db:bootstrap": "tsx src/db/bootstrap.ts",
     "db:seed:v3": "tsx src/db/seed-v3-categories.ts",
+    "db:seed:v3-signoff": "tsx src/db/seed-v3-signoff.ts",
     "db:studio": "drizzle-kit studio"
   },
   "dependencies": {

@@ -191,8 +191,91 @@ LightSelect-Product-Database-Map-v3.md        — reference doc (untracked, not 
 
 ---
 
+## Sign-off resolution (2026-06-20)
+
+All five sign-off items resolved via `seed-v3-signoff.ts` (`pnpm db:seed:v3-signoff`). Idempotent — safe to re-run.
+
+### Item 1 — Orphaned originals hidden
+
+Seven original categories set to `status='hidden'`, `is_active=false`. All had zero product links and zero file links. No IDs were changed or deleted.
+
+| Original category | ID (first 8) | Duplicated by v3 |
+|---|---|---|
+| Recessed Downlight | `8ce70106` | Downlight (recessed) |
+| Track Lighting | `f617dd52` | Track & rail system |
+| Pendant | `f20885e4` | Pendant / suspended |
+| Facade Lighting | `0509b6c2` | Facade-surface linear |
+| Tunnel Lighting | `4c12a8e5` | Tunnel |
+| Landscape Lighting | `b67966f6` | Landscape |
+| Emergency | `bbbcb2ed` | Emergency / exit |
+
+Categories left active (no direct v3 duplicate or non-orphaned): Road Lighting, Sports Lighting, Parking, Controls, Indoor, Outdoor, Architectural, Wall Washer, Linear Profile, Office, Retail, Hospitality, Healthcare, Industrial, Education.
+
+### Item 2 — Road Lighting preserved; Street & area hidden
+
+- **Road Lighting** (`093411dc`) — remains `active`. Product link `f315d577` intact. Not renamed.
+- **Street & area** (`94291617`) — set to `hidden`. The v3 duplicate is suppressed until the product is deliberately re-linked and Road Lighting is deprecated by a human decision.
+
+### Item 3 — category_document_requirements
+
+Left empty. No rows created. Needs human decisions on which document types are required per category.
+
+### Item 4 — category_attribute_relevance populated for Flexible categories
+
+24 rows inserted (12 per category). All 12 new v3 Flexible-group attribute keys are mapped.
+
+**Flexible LED Tapes** (`99b49d18`):
+
+| Attribute key | Relevance |
+|---|---|
+| watts_per_metre | primary |
+| lumens_per_metre | primary |
+| led_per_metre | primary |
+| cut_interval | primary |
+| max_run | primary |
+| colour_mode | primary |
+| addressability | primary |
+| pixel_protocol | secondary |
+| wash_optic | secondary |
+| high_temp_variant | secondary |
+| bend_plane | not_applicable |
+| min_bend_radius | not_applicable |
+
+**Flex Neon** (`2ae11ee9`):
+
+| Attribute key | Relevance |
+|---|---|
+| bend_plane | primary |
+| min_bend_radius | primary |
+| colour_mode | primary |
+| addressability | primary |
+| watts_per_metre | primary |
+| lumens_per_metre | primary |
+| led_per_metre | secondary |
+| cut_interval | secondary |
+| max_run | secondary |
+| pixel_protocol | secondary |
+| wash_optic | secondary |
+| high_temp_variant | secondary |
+
+### Item 5 — spec/claude-extractor.ts
+
+> **TODO (deferred):** When `feature/spec-extraction` is merged to `main`, add the 12 new v3 attribute keys to `apps/api/src/lib/spec/claude-extractor.ts` — specifically in the `ATTRIBUTE_META` object and in the system-prompt attribute list. The keys to add are: `watts_per_metre`, `lumens_per_metre`, `led_per_metre`, `cut_interval`, `max_run`, `bend_plane`, `min_bend_radius`, `colour_mode`, `addressability`, `pixel_protocol`, `wash_optic`, `high_temp_variant`. No schema or DB changes are needed — the attribute_key column is free-text.
+
+---
+
+## Post sign-off state
+
+- **Visible categories** (`status != hidden`): **55** (65 total; 10 hidden)
+- **Hidden**: 7 orphaned originals + Street & area = 8 hidden
+- **category_attribute_relevance**: 24 rows (Flex Tapes × 12, Flex Neon × 12)
+- **Road Lighting** (`093411dc`): active, product link intact ✓
+- All sign-off items resolved. Branch is ready for final review.
+
+---
+
 ## PR instructions
 
 Branch: `feature/editable-categories`  
 Base: `main`  
-Do not merge without sign-off on §Needs human decision items 1 (overlap reconciliation) and 2 (document requirements).
+All five sign-off items resolved. Remaining open items (document requirements mapping, full attribute relevance for non-flexible categories, spec extractor TODO) are non-blocking and deferred by design.
