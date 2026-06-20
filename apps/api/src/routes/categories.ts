@@ -1,5 +1,5 @@
 import { Router, type Request, type Response, type NextFunction } from 'express';
-import { eq, and, or, isNull, asc } from 'drizzle-orm';
+import { eq, and, or, isNull, asc, ne } from 'drizzle-orm';
 import { z } from 'zod';
 import { db } from '../db/client';
 import { categories, document_types, category_document_requirements } from '../db/schema/categories';
@@ -24,6 +24,11 @@ const updateSchema = z.object({
   name: z.string().min(1).max(100).optional(),
   description: z.string().max(500).nullable().optional(),
   parent_category_id: z.string().uuid().nullable().optional(),
+});
+
+/** Explicit status transition for any visible category (system or custom). */
+const statusSchema = z.object({
+  status: z.enum(['active', 'deprecated', 'hidden']),
 });
 
 const addRequirementSchema = z.object({
@@ -52,6 +57,7 @@ async function slugExists(slug: string, orgId: string | null): Promise<boolean> 
   return !!row;
 }
 
+/** Guards edits on ORG-OWNED custom categories only (pre-v3 behaviour). */
 async function assertCategoryAccess(categoryId: string, orgId: string): Promise<typeof categories.$inferSelect> {
   const [cat] = await db
     .select()
@@ -61,6 +67,26 @@ async function assertCategoryAccess(categoryId: string, orgId: string): Promise<
   if (!cat) throw new AppError(404, 'Category not found');
   if (cat.is_system_defined) throw new AppError(403, 'System categories cannot be modified');
   if (cat.organization_id !== orgId) throw new AppError(404, 'Category not found');
+  return cat;
+}
+
+/**
+ * Asserts that the category exists and is visible to this org
+ * (global system categories are visible to all orgs).
+ * Does NOT block edits on system categories — used by the v3 unlock path.
+ */
+async function assertCategoryVisible(categoryId: string, orgId: string): Promise<typeof categories.$inferSelect> {
+  const [cat] = await db
+    .select()
+    .from(categories)
+    .where(
+      and(
+        eq(categories.id, categoryId),
+        or(eq(categories.organization_id, orgId), isNull(categories.organization_id)),
+      ),
+    )
+    .limit(1);
+  if (!cat) throw new AppError(404, 'Category not found');
   return cat;
 }
 
@@ -93,6 +119,8 @@ async function getParentName(parentId: string | null): Promise<string | null> {
 categoriesRouter.get('/', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const orgId = getOrgId(req);
+    // include_hidden=true lets admin UIs show hidden categories for recovery
+    const includeHidden = req.query.include_hidden === 'true';
     const rows = await db
       .select()
       .from(categories)
@@ -102,7 +130,7 @@ categoriesRouter.get('/', async (req: Request, res: Response, next: NextFunction
             eq(categories.organization_id, orgId),
             isNull(categories.organization_id),
           ),
-          eq(categories.is_active, true),
+          includeHidden ? undefined : ne(categories.status, 'hidden'),
         ),
       )
       .orderBy(asc(categories.is_system_defined), asc(categories.name));
@@ -243,6 +271,70 @@ categoriesRouter.delete('/:id', async (req: Request, res: Response, next: NextFu
       .set({ is_active: false, updated_at: new Date() })
       .where(eq(categories.id, req.params.id));
     return success(res, { archived: true });
+  } catch (err) {
+    return next(err);
+  }
+});
+
+// ─── PATCH /categories/:id/status (v3 unlock — works on system categories) ─
+
+/**
+ * Set active / deprecated / hidden on any category visible to the org.
+ * This is the v3 unlock path — it allows changing the lifecycle status of
+ * system-defined categories without weakening any other access control.
+ * Records are NEVER hard-deleted; hidden retains all links.
+ */
+categoriesRouter.patch('/:id/status', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const orgId = getOrgId(req);
+    const cat = await assertCategoryVisible(req.params.id, orgId);
+    const { status } = statusSchema.parse(req.body);
+
+    // Sync the legacy is_active flag: hidden → false, others → true
+    const is_active = status !== 'hidden';
+
+    const [updated] = await db
+      .update(categories)
+      .set({ status, is_active, updated_at: new Date() })
+      .where(eq(categories.id, cat.id))
+      .returning();
+
+    return success(res, updated);
+  } catch (err) {
+    return next(err);
+  }
+});
+
+// ─── PATCH /categories/:id/label (v3 unlock — rename any visible category) ─
+
+/**
+ * Rename or re-parent any category visible to the org, including system ones.
+ * The original `PATCH /categories/:id` still blocks system categories for
+ * backward compat; this endpoint is the explicit admin rename path.
+ */
+categoriesRouter.patch('/:id/label', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const orgId = getOrgId(req);
+    const cat = await assertCategoryVisible(req.params.id, orgId);
+    const body = updateSchema.parse(req.body);
+
+    if (body.name && body.name !== cat.name) {
+      const newSlug = toSlug(body.name);
+      // Check collision within the same scope (system or org)
+      const scopeOrgId = cat.organization_id ?? null;
+      if (await slugExists(newSlug, scopeOrgId)) {
+        throw new AppError(409, `A category named "${body.name}" already exists in that scope.`);
+      }
+      (body as any).slug = newSlug;
+    }
+
+    const [updated] = await db
+      .update(categories)
+      .set({ ...body, updated_at: new Date() })
+      .where(eq(categories.id, cat.id))
+      .returning();
+
+    return success(res, updated);
   } catch (err) {
     return next(err);
   }

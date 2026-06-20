@@ -3,16 +3,25 @@ import type { AnyPgColumn } from 'drizzle-orm/pg-core';
 import { users } from './users';
 import { organizations } from './organizations';
 
+export const categoryStatuses = ['active', 'deprecated', 'hidden'] as const;
+export type CategoryStatus = (typeof categoryStatuses)[number];
+
 export const categories = pgTable('categories', {
   id: uuid('id').defaultRandom().primaryKey(),
   organization_id: uuid('organization_id').references(() => organizations.id, { onDelete: 'cascade' }),
   name: text('name').notNull(),
   slug: text('slug').notNull(),
+  /** Self-referential FK for subcategory nesting. Flat (all null) for now;
+   *  enables subcategories later as a data-only change — no migration needed. */
   parent_category_id: uuid('parent_category_id').references((): AnyPgColumn => categories.id, {
     onDelete: 'set null',
   }),
   is_system_defined: boolean('is_system_defined').default(false).notNull(),
   description: text('description'),
+  /** active = visible + selectable; deprecated = visible but greyed / not selectable for new;
+   *  hidden = removed from pickers but record and all links are retained. Never hard-deleted. */
+  status: text('status').$type<CategoryStatus>().notNull().default('active'),
+  /** Legacy boolean kept for backward-compat query paths; kept in sync with status by API. */
   is_active: boolean('is_active').default(true).notNull(),
   created_by: uuid('created_by').references(() => users.id),
   created_at: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
