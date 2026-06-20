@@ -11,3 +11,4 @@ export * from './checklist';
 export * from './spec';
 export * from './boq';
 export * from './exports';
+export * from './registry';

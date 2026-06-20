@@ -12,6 +12,7 @@
     "db:seed": "tsx src/db/seed.ts",
     "db:setup": "tsx src/db/migrate.ts && tsx src/db/seed.ts",
     "db:bootstrap": "tsx src/db/bootstrap.ts",
+    "registry:backfill": "tsx src/db/registry-backfill.ts",
     "db:studio": "drizzle-kit studio"
   },
   "dependencies": {
