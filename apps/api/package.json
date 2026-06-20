@@ -14,6 +14,7 @@
     "db:bootstrap": "tsx src/db/bootstrap.ts",
     "db:seed:v3": "tsx src/db/seed-v3-categories.ts",
     "db:seed:v3-signoff": "tsx src/db/seed-v3-signoff.ts",
+    "registry:backfill": "tsx src/db/registry-backfill.ts",
     "db:studio": "drizzle-kit studio"
   },
   "dependencies": {

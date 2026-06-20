@@ -133,7 +133,8 @@ const NO_COMPLIANCE: LuminaireComplianceBlock[] | null = null;
 /** Read worksheet cells from an XLSX buffer. */
 async function readXlsxCells(buf: Buffer): Promise<Map<string, string>> {
   const wb = new ExcelJS.Workbook();
-  await wb.xlsx.load(buf);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  await wb.xlsx.load(buf as any);
   const cells = new Map<string, string>();
   wb.eachSheet((ws) => {
     ws.eachRow((row) => {
@@ -149,7 +150,8 @@ async function readXlsxCells(buf: Buffer): Promise<Map<string, string>> {
 /** Return worksheet names from an XLSX buffer. */
 async function xlsxSheetNames(buf: Buffer): Promise<string[]> {
   const wb = new ExcelJS.Workbook();
-  await wb.xlsx.load(buf);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  await wb.xlsx.load(buf as any);
   return wb.worksheets.map((ws) => ws.name);
 }
 

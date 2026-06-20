@@ -12,3 +12,4 @@ export * from './spec';
 export * from './boq';
 export * from './exports';
 export * from './catalogue';
+export * from './registry';
