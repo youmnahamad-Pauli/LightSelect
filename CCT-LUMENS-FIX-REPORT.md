@@ -46,12 +46,25 @@ ALTER TABLE "product_attribute_values" ADD COLUMN "cct_kelvin" integer;
 
 Revised the LLM system prompt in `catalogue-llm.ts` to enforce per-SKU resolution:
 
-**CCT rule:** A single SKU has exactly one colour temperature. Resolution order:
-1. Specification table row for this exact SKU → use that number.
-2. Catalogue's own order-code legend → decode from the SKU's model code.
-3. Combined type/CCT/wattage name decoded per the catalogue's published key.
-Never assign the family's full available-CCT list to an individual SKU's `cct` attribute.
+**CCT rule:** A single SKU has exactly one colour temperature. The prompt instructs the LLM
+to use the first applicable source, in order:
+1. The specification table row for this exact SKU has a dedicated CCT column → read that value directly.
+2. The catalogue publishes an order-code legend or key → decode from the model code using that legend.
+3. A combined type/CCT/wattage name is decodable per the catalogue's published key → decode as above.
+Never assign the product family's full available-CCT list to an individual SKU's `cct` attribute.
 Output format: plain integer string (e.g. `"3000"`, not `"3000K"`, not `"2700K, 3000K"`).
+
+**What actually happened for ILTI:** Every WKL SKU has a dedicated `CCT` column in its
+specification table (e.g. `2700K`, `3000K`). Step 1 always applied; steps 2 and 3 were never
+invoked. The ILTI catalogue publishes no order-code legend — **no legend-decoding occurred**.
+CCT values are direct table-column reads, confidence 1.0.
+
+**Extractor risk note:** The prompt's steps 2–3 are live fallback paths for catalogues that lack
+explicit CCT columns. On such a catalogue, step 3 could lead the LLM to infer CCT from model-code
+patterns even without a formal published legend — introducing errors. This is a prompt-level risk,
+not a code-level one: there is no code that parses order codes. The risk does not affect ILTI
+(table column always wins) but should be reviewed before ingesting catalogues without per-SKU CCT
+columns.
 
 **series_cct_options:** Family's full CCT menu → informational attribute only.
 
@@ -109,7 +122,13 @@ Requirement: 3000 K ±100 K, ~2000 lm/m, white family.
 | 1-WKL-4510-0-00 | disqualified (RGB gate) | — | — | — |
 | 1-WKL-4511-0-00 | disqualified (RGBW gate) | — | — | — |
 
-**Key insight:** The ILTI catalogue's order-code legend does NOT encode CCT as the first two digits of the numeric suffix as naively assumed. The LLM decoded each SKU's CCT from the catalogue's own published key. Result: five of the six previously-evaluated SKUs now show `deviation` on CCT (they are 2700 K or 2200 K products, not 3000 K), which is the correct finding.
+**Key insight:** The ILTI catalogue has no order-code legend. CCT was read directly from an
+explicit `CCT` column in each SKU's specification table row — a direct, verbatim value, not decoded
+or inferred. The fix report previously (incorrectly) stated that CCT was decoded from an order-code
+legend; this has been corrected. The reason five of the six originally-evaluated SKUs now show
+`deviation` on CCT is that their table rows explicitly state 2700 K or 2200 K — the before-state
+extractor assigned the family's full CCT list to `cct`, which always contained 3000 K and therefore
+always returned a false `comply`.
 
 ---
 
