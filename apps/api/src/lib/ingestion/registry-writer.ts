@@ -14,6 +14,26 @@
 import path from 'path';
 import { eq, and } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
+
+/**
+ * Parse a CCT attribute value string into a single integer Kelvin, or null if
+ * the value is multi-valued, a range, or otherwise not a single integer.
+ * Accepts "3000", "3000K", "3000 K" — rejects "2700K, 3000K", "2700-4000K".
+ */
+function parseSingleCctKelvin(raw: string): number | null {
+  const trimmed = raw.trim();
+  // Reject list values (comma-separated)
+  if (trimmed.includes(',')) return null;
+  // Reject range values (hyphen/dash between two numbers after stripping units)
+  const stripped = trimmed.replace(/[KkΚ°\s]/g, '');
+  if (/^\d+[-–—]\d+$/.test(stripped)) return null;
+  // Parse single integer
+  const n = parseInt(stripped, 10);
+  if (isNaN(n)) return null;
+  // Sanity check: CCT values are 1000–20000 K
+  if (n < 1000 || n > 20000) return null;
+  return n;
+}
 import {
   canonical_products,
   canonical_product_sources,
@@ -132,6 +152,10 @@ export async function writeProductToRegistry(params: {
       )
       .limit(1);
 
+    // For CCT attributes, attempt to resolve a single integer Kelvin value.
+    // series_cct_options is informational and never gets a cct_kelvin.
+    const cctKelvin = attrKey === 'cct' ? parseSingleCctKelvin(attrData.value) : null;
+
     if (existing.length > 0) {
       // Never overwrite a confirmed value with an extracted one
       if (existing[0].value_state === 'confirmed') {
@@ -147,6 +171,7 @@ export async function writeProductToRegistry(params: {
           confidence_score: parseFloat(attrData.confidence.toFixed(3)),
           source_product_id: null,
           conflict_notes: `Source: ${pageRef}`,
+          cct_kelvin: cctKelvin,
           updated_at: new Date(),
         })
         .where(eq(product_attribute_values.id, existing[0].id));
@@ -159,6 +184,7 @@ export async function writeProductToRegistry(params: {
         source_product_id: null,
         confidence_score: parseFloat(attrData.confidence.toFixed(3)),
         conflict_notes: `Source: ${pageRef}`,
+        cct_kelvin: cctKelvin,
       });
     }
     attributesWritten++;

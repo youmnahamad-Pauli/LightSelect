@@ -1,0 +1,1 @@
+ALTER TABLE "product_attribute_values" ADD COLUMN "cct_kelvin" integer;
