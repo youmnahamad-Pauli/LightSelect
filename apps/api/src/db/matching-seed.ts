@@ -102,6 +102,27 @@ async function main() {
       });
 
     console.log(`  ${p.canonical_model_code} (${familyName || 'unknown'}) → colour_family=${colourFamily}`);
+
+    // Set dimmable=true — all WKL constant-voltage tapes support 0-10V / PWM dimming
+    await db
+      .insert(product_attribute_values)
+      .values({
+        canonical_product_id: p.id,
+        attribute_key:        'dimmable',
+        attribute_value:      'true',
+        value_state:          'confirmed',
+      })
+      .onConflictDoUpdate({
+        target: [
+          product_attribute_values.canonical_product_id,
+          product_attribute_values.attribute_key,
+        ],
+        set: {
+          attribute_value: 'true',
+          value_state:     'confirmed',
+          updated_at:      new Date(),
+        },
+      });
   }
 
   // ── 2. Classify profile products ─────────────────────────────────────────
@@ -215,13 +236,11 @@ async function main() {
     {
       requirement_id: requirementId,
       attribute_key:  'lumens_per_metre',
-      operator:       'match_target',
+      operator:       'match_target_lumen',
       target_value:   '2000',
       target_unit:    'lm/m',
-      tolerance_tight_pct: 2,
-      tolerance_outer_pct: 10,
       weight:         C.WEIGHT_HIGH,
-      notes:          '±2% → comply; ±10% → comment; beyond → deviation. Unconfirmed basis also flagged as comment.',
+      notes:          'Asymmetric: ±2% → comply; −2%–−10% → comment; undershoot >10% → deviation. Overshoot: watts must be within spec; dimmable → +20% band, else +10% band.',
     },
     {
       requirement_id: requirementId,

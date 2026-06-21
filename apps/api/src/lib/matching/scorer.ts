@@ -13,13 +13,17 @@ import type { VerdictType } from '../../db/schema/matching';
 import type { ProvenanceState } from '../../db/schema/matching';
 import {
   compareGte, compareLte, compareEq, compareContainsValue,
-  compareMatchTarget, compareMatchTargetCct,
+  compareMatchTarget, compareMatchTargetCct, compareMatchTargetLumen,
 } from './comparators';
 import { parseIpRating, parseAttributeValue } from './parse-value';
 import { MATCHING_CONFIG as C } from './config';
 
 // Attributes where unconfirmed basis (lumen output not test-backed) warrants a comment flag
 const LUMEN_BASIS_ATTRS = new Set(['lumens', 'lumens_per_metre']);
+
+// Wattage and lumen attribute keys — watts must be evaluated before lumens for the overshoot rule
+const WATT_ATTR_KEYS  = new Set(['watts_per_metre', 'watts']);
+const LUMEN_ATTR_KEYS = new Set(['lumens_per_metre', 'lumens']);
 
 // Provenances that confirm the lumen value is a measured delivered output
 const CONFIRMED_LUMEN_PROVENANCE = new Set<ProvenanceState>([
@@ -34,7 +38,15 @@ export function evaluateScoredAttributes(
 ): AttributeVerdict[] {
   const results: AttributeVerdict[] = [];
 
-  for (const attr of scoredAttrs) {
+  // Evaluate watts before lumens so the overshoot rule can read the watts verdict.
+  const ordered = [
+    ...scoredAttrs.filter((a) => WATT_ATTR_KEYS.has(a.attribute_key)),
+    ...scoredAttrs.filter((a) => !WATT_ATTR_KEYS.has(a.attribute_key) && !LUMEN_ATTR_KEYS.has(a.attribute_key)),
+    ...scoredAttrs.filter((a) => LUMEN_ATTR_KEYS.has(a.attribute_key)),
+  ];
+  const verdictCache = new Map<string, VerdictType>();
+
+  for (const attr of ordered) {
     if (!attr.weight) continue;
 
     const attrRow   = candidate.attributes.get(attr.attribute_key);
@@ -99,11 +111,27 @@ export function evaluateScoredAttributes(
           }
           break;
         }
+        case 'match_target_lumen': {
+          const dimmableRaw  = candidate.attributes.get('dimmable')?.attribute_value ?? null;
+          const isDimmable   = dimmableRaw === 'true' ? true : dimmableRaw === 'false' ? false : null;
+          const wattsVerdict = verdictCache.get('watts_per_metre') ?? verdictCache.get('watts');
+          const wattsIsWithinSpec = wattsVerdict === undefined || wattsVerdict !== 'deviation';
+          const lumenResult = compareMatchTargetLumen(
+            productRaw,
+            attr.target_value,
+            attr.attribute_key,
+            isDimmable,
+            wattsIsWithinSpec,
+          );
+          verdict = lumenResult.verdict;
+          if (lumenResult.note) evidenceNote = lumenResult.note;
+          break;
+        }
         default:
           verdict = 'not_applicable';
       }
 
-      // Change 5: lumen basis flag — downgrade 'comply' to 'comment' when basis is unconfirmed
+      // Lumen basis flag — downgrade 'comply' to 'comment' when basis is unconfirmed
       if (
         verdict === 'comply' &&
         LUMEN_BASIS_ATTRS.has(attr.attribute_key) &&
@@ -131,6 +159,8 @@ export function evaluateScoredAttributes(
       weighted_score: weightedScore,
       evidence_note: evidenceNote ?? buildNote(attr, productRaw, verdict),
     });
+
+    verdictCache.set(attr.attribute_key, verdict);
   }
 
   return results;

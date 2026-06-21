@@ -27,6 +27,16 @@ export const MATCHING_CONFIG = {
   /** Closest CCT in product list within this many K of target → comment; 0K delta → comply. */
   CCT_OUTER_ABS_K: 100,
 
+  // ── Lumen-output bands (match_target_lumen operator) ──────────────────────
+  /** Within ±this % of lumen target → Comply (symmetric tight band). */
+  LUMEN_TIGHT_PCT: 2,
+  /** Undershoot: -(this)% to -TIGHT% → Comment; beyond -(this)% → Deviation. */
+  LUMEN_UNDERSHOOT_COMMENT_PCT: 10,
+  /** Overshoot comment limit for DIMMABLE products (+2% to +this% → Comment). */
+  LUMEN_OVERSHOOT_COMMENT_PCT_DIMMABLE: 20,
+  /** Overshoot comment limit for NON-DIMMABLE or unknown-dimmability products (+2% to +this% → Comment). */
+  LUMEN_OVERSHOOT_COMMENT_PCT_NONDIMMABLE: 10,
+
   // ── Provenance confidence scores ───────────────────────────────────────────
   PROVENANCE_SCORES: {
     test_report_backed: 1.0,

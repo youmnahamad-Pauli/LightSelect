@@ -126,6 +126,86 @@ export function compareMatchTarget(
   return 'deviation';
 }
 
+/**
+ * Asymmetric lumen-output comparator (match_target_lumen operator).
+ *
+ * Undershoot (delta < 0):
+ *   |delta| ≤ LUMEN_TIGHT_PCT            → comply (lumen-basis may downgrade to comment)
+ *   |delta| ≤ LUMEN_UNDERSHOOT_COMMENT_PCT → comment
+ *   otherwise                             → deviation
+ *
+ * Overshoot (delta > 0), watts NOT within spec:
+ *   → deviation (power over spec; extra lumens not credible)
+ *
+ * Overshoot (delta > 0), watts within spec:
+ *   delta ≤ LUMEN_TIGHT_PCT              → comply (lumen-basis may downgrade to comment)
+ *   dimmable=true:  delta ≤ LUMEN_OVERSHOOT_COMMENT_PCT_DIMMABLE    → comment
+ *   dimmable=false/null: delta ≤ LUMEN_OVERSHOOT_COMMENT_PCT_NONDIMMABLE → comment
+ *   otherwise                             → deviation
+ *
+ * Returns the verdict and a pre-built evidence note (empty string when verdict=comply,
+ * letting the caller fall through to lumen-basis-downgrade or buildNote).
+ */
+export function compareMatchTargetLumen(
+  productRaw: string | null,
+  requiredRaw: string,
+  attrKey: string,
+  isDimmable: boolean | null,
+  wattsIsWithinSpec: boolean,
+): { verdict: VerdictType; note: string } {
+  if (!productRaw) return { verdict: 'not_applicable', note: '' };
+  const prodMid = midpoint(parseAttributeValue(productRaw));
+  const reqVal  = parseAttributeValue(requiredRaw).primary;
+  if (prodMid === null || reqVal === null || reqVal === 0) {
+    return { verdict: 'not_applicable', note: '' };
+  }
+
+  const delta    = ((prodMid - reqVal) / reqVal) * 100;
+  const absDelta = Math.abs(delta);
+
+  if (absDelta <= C.LUMEN_TIGHT_PCT) {
+    return { verdict: 'comply', note: '' };
+  }
+
+  if (delta < 0) {
+    // Undershoot
+    if (absDelta <= C.LUMEN_UNDERSHOOT_COMMENT_PCT) {
+      return {
+        verdict: 'comment',
+        note: `${attrKey}: ${productRaw} — undershoot ${absDelta.toFixed(1)}% within −${C.LUMEN_UNDERSHOOT_COMMENT_PCT}% band`,
+      };
+    }
+    return {
+      verdict: 'deviation',
+      note: `${attrKey}: ${productRaw} — undershoot ${absDelta.toFixed(1)}% exceeds −${C.LUMEN_UNDERSHOOT_COMMENT_PCT}% limit`,
+    };
+  }
+
+  // Overshoot (delta > 0)
+  if (!wattsIsWithinSpec) {
+    return {
+      verdict: 'deviation',
+      note: `${attrKey}: ${productRaw} — overshoot +${delta.toFixed(1)}%; watts over spec → deviation`,
+    };
+  }
+
+  const overshootLimit = isDimmable === true
+    ? C.LUMEN_OVERSHOOT_COMMENT_PCT_DIMMABLE
+    : C.LUMEN_OVERSHOOT_COMMENT_PCT_NONDIMMABLE;
+  const dimmableLabel = isDimmable === true ? 'dimmable' : isDimmable === false ? 'non-dimmable' : 'dimmability unknown';
+
+  if (delta <= overshootLimit) {
+    return {
+      verdict: 'comment',
+      note: `${attrKey}: ${productRaw} — overshoot +${delta.toFixed(1)}%; watts OK + ${dimmableLabel} → within +${overshootLimit}% band`,
+    };
+  }
+  return {
+    verdict: 'deviation',
+    note: `${attrKey}: ${productRaw} — overshoot +${delta.toFixed(1)}% exceeds +${overshootLimit}% limit (${dimmableLabel})`,
+  };
+}
+
 // ── Colour family gate ────────────────────────────────────────────────────
 
 const WHITE_FAMILIES  = new Set(['white', 'tunable_white', 'dim_to_warm']);

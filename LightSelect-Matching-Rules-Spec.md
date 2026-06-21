@@ -65,7 +65,7 @@ Per-attribute score: **Comply = 1.0 · Comply-with-comment = 0.7 · Deviation = 
 | **CRI (Ra)** | ≥ | ≥ required → within 2 pts below → >2 below | high | interior; critical retail/hospitality/gallery/premium residential |
 | **CCT** | match-target | at target (or tunable covers) → within ±100 K → >100 K off | high | all interior + architectural exterior |
 | **SDCM** | ≤ | ≤ specified → *(none)* → looser than specified | medium | premium interior |
-| **Lumen output** | match-target | ±2% → beyond ±2% to ±10% → >10% above or below | high | all |
+| **Lumen output** | match-target-lumen | ±2% → comply; undershoot −2% to −10% → comment; undershoot >10% → deviation; overshoot: if watts within spec and dimmable → up to +20% comment; if non-dimmable/unknown → up to +10% comment; if watts over spec → deviation regardless | high | all |
 | **Power / wattage** | ≤ (electrical engineer's designed value) | ≤ designed → within 5% over → >5% over | medium | all (electrical-design constraint, not energy budget) |
 | **Efficacy (lm/W)** | ≥ | ≥ required → within 5% below → >5% below | medium | all, where specified |
 | **Beam angle / optic** | match-target (angle) + match-type (distribution) | angle ±10% & type matches → beyond ±10% to nearest optic step → >one step OR wrong distribution type | medium | all; sharpest accent/retail/façade/wall-wash |
@@ -108,7 +108,7 @@ Notes: **tunable-white and dim-to-warm are not interchangeable** (wrong one = de
 
 | Attribute | Operator | Comply → Comment → Deviation | Weight |
 |---|---|---|---|
-| **Per-metre output (lm/m)** | match-target | same as lumen output: ±2% · ±10% · >10% | high |
+| **Per-metre output (lm/m)** | match-target-lumen | same asymmetric rule as lumen output (see Core table). Operator: `match_target_lumen`. Dimmable attribute must be set on product; watts evaluated first. | high |
 | **Per-metre power (W/m)** | ≤ designed | same as power: ≤ · 5% over · >5% over | medium |
 | **Cut interval** | ≤ required | fine enough → coarser (length rounds to nearest cut point) → can't make the run | low-med |
 | **Max run length** | ≥ | single-feed ≥ required → needs re-injection/extra feeds → unachievable / install can't take a mid-run feed | medium |

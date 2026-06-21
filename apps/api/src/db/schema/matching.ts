@@ -14,6 +14,7 @@ export const matchingOperators = [
   'range_covers',           // product range must span [target_min..target_max]  (operating temp)
   'match_target',           // within tolerance_tight_pct → comply; outer → comment; beyond → deviation
   'match_target_cct',       // CCT: closest value in list within ±CCT_OUTER_ABS_K K → comment; exact → comply
+  'match_target_lumen',     // asymmetric lumen rule: undershoot and overshoot bands differ; dimmable-aware
   'contains_value',         // list membership check (generic)
   'contains_required_cert', // certifications list contains all required certs (soft gate)
   'member_of',              // distribution_type in the controlled vocabulary list
