@@ -24,7 +24,7 @@
  * confirmed values are NEVER overwritten by extracted ones.
  * Variants (different CCT / finish / optic reflected in model code) → separate records.
  */
-import { pgTable, uuid, text, real, uniqueIndex, timestamp } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, text, integer, real, uniqueIndex, timestamp } from 'drizzle-orm/pg-core';
 import type { ProvenanceState } from './matching';
 import { organizations } from './organizations';
 import { categories } from './categories';
@@ -182,6 +182,14 @@ export const product_attribute_values = pgTable(
      *          Kept: [winning value] (higher priority state)."
      */
     conflict_notes: text('conflict_notes'),
+    /**
+     * Structured single CCT value in Kelvin for this specific SKU.
+     * Populated during ingestion when attribute_key = 'cct' and the value resolves to a
+     * single integer. The matching engine reads this field for match_target_cct comparisons
+     * instead of parsing attribute_value. Null for non-CCT attributes and for legacy rows
+     * where CCT was stored as a multi-value list (those need re-ingestion).
+     */
+    cct_kelvin: integer('cct_kelvin'),
     created_at: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updated_at: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
