@@ -23,6 +23,7 @@ import { boqProjectRouter, boqItemRouter } from './routes/boq';
 import { priceListProjectRouter, priceListRouter } from './routes/price-lists';
 import { exportProjectRouter, exportRouter } from './routes/exports';
 import { profilesRouter, accessoriesRouter, configuredProductsRouter } from './routes/catalogue';
+import { ingestionRouter } from './routes/ingestion';
 import { errorHandler } from './middleware/error-handler';
 
 const app = express();
@@ -66,6 +67,7 @@ app.use('/exports', exportRouter);
 app.use('/catalogue/profiles', profilesRouter);
 app.use('/catalogue/accessories', accessoriesRouter);
 app.use('/configured-products', configuredProductsRouter);
+app.use('/ingestion', ingestionRouter);
 
 app.use(errorHandler);
 
