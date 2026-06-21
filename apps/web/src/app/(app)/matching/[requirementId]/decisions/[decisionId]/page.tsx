@@ -282,7 +282,13 @@ export default function DecisionDetailPage({
                         <span className="font-mono text-ink">{row.required_value ?? '—'}</span>
                       </td>
                       <td className="px-4 py-3">
-                        <span className="font-mono text-xs text-ink">{row.product_value ?? <span className="text-ink-faint">missing</span>}</span>
+                        <span className="font-mono text-xs text-ink">
+                          {row.product_value
+                            ? row.required_operator === 'match_target_cct'
+                              ? `${row.product_value} K`
+                              : row.product_value
+                            : <span className="text-ink-faint">missing</span>}
+                        </span>
                       </td>
                       <td className="px-4 py-3">
                         <VerdictBadge verdict={row.verdict} />
