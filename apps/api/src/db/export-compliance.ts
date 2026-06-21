@@ -132,7 +132,7 @@ async function main() {
   // ── Write output ────────────────────────────────────────────────────────
 
   const reqShort = requirementId.slice(0, 8);
-  const dateStr  = new Date().toISOString().slice(0, 10);
+  const dateStr  = new Date().toISOString().slice(0, 16).replace('T', '-').replace(':', '');
   const outName  = `compliance-${reqShort}-${dateStr}.xlsx`;
   const outPath  = path.resolve(process.cwd(), outName);
 
