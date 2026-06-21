@@ -13,9 +13,11 @@ export const matchingOperators = [
   'eq',                     // = target_value  (voltage for DC, dimming protocol)
   'range_covers',           // product range must span [target_min..target_max]  (operating temp)
   'match_target',           // within tolerance_tight_pct → comply; outer → comment; beyond → deviation
-  'contains_value',         // CCT list contains the required value
+  'match_target_cct',       // CCT: closest value in list within ±CCT_OUTER_ABS_K K → comment; exact → comply
+  'contains_value',         // list membership check (generic)
   'contains_required_cert', // certifications list contains all required certs (soft gate)
   'member_of',              // distribution_type in the controlled vocabulary list
+  'colour_family_gate',     // colour family hierarchy: white vs colour channel hard gate
 ] as const;
 export type MatchingOperator = (typeof matchingOperators)[number];
 

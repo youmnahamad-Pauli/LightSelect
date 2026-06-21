@@ -23,6 +23,10 @@ export const MATCHING_CONFIG = {
   /** Within ±this % of target → Comment; beyond → Deviation. */
   DEFAULT_OUTER_TOLERANCE_PCT: 10,
 
+  // ── CCT absolute-K tolerance (match_target_cct operator) ──────────────────
+  /** Closest CCT in product list within this many K of target → comment; 0K delta → comply. */
+  CCT_OUTER_ABS_K: 100,
+
   // ── Provenance confidence scores ───────────────────────────────────────────
   PROVENANCE_SCORES: {
     test_report_backed: 1.0,

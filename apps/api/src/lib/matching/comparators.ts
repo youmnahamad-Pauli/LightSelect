@@ -126,6 +126,99 @@ export function compareMatchTarget(
   return 'deviation';
 }
 
+// ── Colour family gate ────────────────────────────────────────────────────
+
+const WHITE_FAMILIES  = new Set(['white', 'tunable_white', 'dim_to_warm']);
+const COLOUR_FAMILIES = new Set(['rgb', 'rgbw', 'rgbww', 'rgbic']);
+
+/**
+ * Colour family hard gate per Matching Rules Spec §B.
+ *
+ * WHITE requirement: only white / tunable_white / dim_to_warm qualify.
+ *   Any colour channel product (rgb, rgbw, rgbic) → gate_fail.
+ *
+ * Colour requirement: white-only products → gate_fail.
+ *   RGBIC over-capable for RGB spec → gate_pass (superset).
+ */
+export function compareColourFamilyGate(
+  productFamily: string | null,
+  requiredFamily: string,
+): VerdictType {
+  if (!productFamily) return 'gate_unverifiable';
+  const prod = productFamily.toLowerCase().trim();
+  const req  = requiredFamily.toLowerCase().trim();
+
+  if (WHITE_FAMILIES.has(req)) {
+    return WHITE_FAMILIES.has(prod) ? 'gate_pass' : 'gate_fail';
+  }
+
+  if (req === 'rgb') {
+    return COLOUR_FAMILIES.has(prod) ? 'gate_pass' : 'gate_fail';
+  }
+
+  if (req === 'rgbw' || req === 'rgbww') {
+    return (prod === 'rgbw' || prod === 'rgbww' || prod === 'rgbic') ? 'gate_pass' : 'gate_fail';
+  }
+
+  if (req === 'rgbic') {
+    return prod === 'rgbic' ? 'gate_pass' : 'gate_fail';
+  }
+
+  // Unknown requirement family: exact match
+  return prod === req ? 'gate_pass' : 'gate_fail';
+}
+
+// ── CCT match-target (absolute-K tolerance) ───────────────────────────────
+
+/**
+ * CCT scored comparator (match_target_cct operator).
+ *
+ * For a product CCT list like "2700K, 3000K, 4000K":
+ *   • Finds the closest CCT to the required value.
+ *   • delta = 0 → comply; 0 < delta ≤ outerAbsK → comment; delta > outerAbsK → deviation.
+ *
+ * For tunable-white expressed as a range (e.g. "2700K – 6500K"):
+ *   • If the required CCT falls within the range → comply.
+ *
+ * Returns 'not_applicable' only if the value cannot be parsed at all.
+ */
+export function compareMatchTargetCct(
+  productRaw: string | null,
+  requiredK: number,
+  outerAbsK: number,
+): VerdictType {
+  if (!productRaw) return 'not_applicable';
+  const parsed = parseAttributeValue(productRaw);
+
+  // Tunable-white range: if required CCT is covered → comply
+  if (parsed.min !== null && parsed.max !== null && parsed.items.length === 0) {
+    if (parsed.min <= requiredK && requiredK <= parsed.max) return 'comply';
+    const delta = Math.min(
+      Math.abs(parsed.min - requiredK),
+      Math.abs(parsed.max - requiredK),
+    );
+    return delta <= outerAbsK ? 'comment' : 'deviation';
+  }
+
+  // Discrete list (most common: "2700K, 3000K, 4000K" → items = ['2700', '3000', '4000'])
+  if (parsed.items.length > 0) {
+    const ccts = parsed.items.map((s) => parseFloat(s)).filter((n) => !isNaN(n));
+    if (ccts.length === 0) return 'not_applicable';
+    const minDelta = Math.min(...ccts.map((v) => Math.abs(v - requiredK)));
+    if (minDelta === 0) return 'comply';
+    return minDelta <= outerAbsK ? 'comment' : 'deviation';
+  }
+
+  // Single value
+  if (parsed.primary !== null) {
+    const delta = Math.abs(parsed.primary - requiredK);
+    if (delta === 0) return 'comply';
+    return delta <= outerAbsK ? 'comment' : 'deviation';
+  }
+
+  return 'not_applicable';
+}
+
 // ── Certifications soft gate ──────────────────────────────────────────────────
 
 /**
