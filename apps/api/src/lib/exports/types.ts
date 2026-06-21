@@ -10,10 +10,52 @@
  *     to compose them (e.g. AECOM: "Comply with <comment>").
  *   - gate_results duplicates gate evidence as a summary; attributes list
  *     covers every adjudicated item (gates + scored) in evaluation order.
+ *   - ProposedProduct carries both archetype and lumen_representation so
+ *     any template can render source vs delivered without DB re-queries.
  */
 
 /** Normalised verdict for the export spine. */
 export type SpineVerdict = 'comply' | 'comply_with_comment' | 'deviation';
+
+/**
+ * Physical construction archetype of the proposed product.
+ *
+ *   preassembled    — factory-built luminaire; published lm figure is delivered output.
+ *   component_build — strip + profile + diffuser; delivered = source × diffuser_transmission.
+ *                     If transmission not characterised → delivered_lumens = null (PENDING).
+ *   unknown         — archetype not confirmed; lumen basis unverified. Flag for review.
+ */
+export type ProductArchetype = 'preassembled' | 'component_build' | 'unknown';
+
+/**
+ * Lumen output with explicit source vs delivered basis.
+ *
+ * For component_build products without characterised diffuser_transmission,
+ * delivered_lumens is null and pending_reason explains why. Templates must
+ * NEVER substitute source_lumens for delivered_lumens in this case.
+ */
+export interface LumenRepresentation {
+  /** Bare strip/module output (lm or lm/m depending on product type). */
+  source_lumens: number | null;
+  /**
+   * Output reaching the application.
+   *   preassembled  → equals published figure (basis='delivered').
+   *   component_build with transmission → source × transmission.
+   *   component_build without transmission → null (PENDING).
+   *   unknown       → equals source_lumens (unconfirmed basis).
+   */
+  delivered_lumens: number | null;
+  /** Which figure the published spec cites. */
+  basis: 'source' | 'delivered';
+  /** Fractional transmission (0.0–1.0). Null if not characterised. */
+  diffuser_transmission: number | null;
+  /** Unit string, e.g. "lm/m" for tape, "lm" for fixture. */
+  unit: string;
+  /** Delivered ÷ wattage (lm/W). Null when delivered is pending. */
+  efficacy_lm_per_w: number | null;
+  /** Non-null when delivered_lumens is null — explains why it's pending. */
+  pending_reason: string | null;
+}
 
 export interface StatementMetadata {
   project_name: string;
@@ -37,6 +79,18 @@ export interface ProposedProduct {
   country_of_origin: string | null;
   fit_score: number | null;
   rank: number | null;
+  /** Physical construction archetype — drives lumen basis and template rendering. */
+  archetype: ProductArchetype;
+  /**
+   * Source and delivered lumen figures with explicit basis.
+   * Null if no lumen attribute was found in the product data or evidence.
+   */
+  lumen_representation: LumenRepresentation | null;
+  /**
+   * All raw product_attribute_values for this product, keyed by attribute_key.
+   * Templates can reach any attribute not surfaced by adjudicated evidence.
+   */
+  raw_attributes: Record<string, string | null>;
 }
 
 /**
