@@ -115,21 +115,35 @@ Requirement: 3000 K ±100 K, ~2000 lm/m, white family.
 
 ## Updated ranking (flexible-tape requirement, 3000 K / ~2000 lm/m)
 
-18 products scored (12 new sibling SKUs discovered in re-ingestion + 6 original), 2 disqualified.
+Live run: 2026-06-21. 20 WKL products, 18 scored, 2 disqualified (RGB/RGBW colour gate), 8 type-excluded (profiles + Signify downlight).
 
-| Rank | Product | Fit% | CCT | lm/m | Note |
-|------|---------|------|-----|------|------|
-| 1 | 1-WKL-6023-0-00 *(new)* | 93.1% | 3000 K ✓ | ~2000 lm/m ✓ | Best match |
-| 2 | 1-WKL-4501-0-00 *(new)* | 76.9% | 3000 K ✓ | ~1900 lm/m comment | CCT comply, lm/m comment |
-| 3 | 1-WKL-3021-1-00 *(new)* | 76.9% | 3000 K ✓ | ~1900 lm/m comment | CCT comply, lm/m comment |
-| 4 | 1-WKL-4502-0-00 *(new)* | 70.0% | 3000 K ✓ | off-target | CCT comply |
-| 5 | 1-WKL-6022-0-00 | 70.0% | 2700 K ✗ | 1800 lm/m comment | CCT deviation |
-| 6 | 1-WKL-3020-1-00 | 70.0% | 2700 K ✗ | 2064 lm/m comment | CCT deviation |
-| … | … | … | … | … | |
-| 11 | 1-WKL-3010-1-00 | 38.5% | 3000 K ✓ | 3091 lm/m deviation | lm/m too high |
+| Rank | Product | Fit% | Conf | CCT | lm/m | CCT verdict | lm/m verdict |
+|------|---------|------|------|-----|------|-------------|--------------|
+| 1 | 1-WKL-6023-0-00 | 93.1% | Med | 3000 K | 1850 | comply | comment |
+| 2 | 1-WKL-4501-0-00 | 76.9% | Med | 3000 K | 1770 | comply | deviation |
+| 3 | 1-WKL-3021-1-00 | 76.9% | Med | 3000 K | 2224 | comply | deviation |
+| 4 | 1-WKL-6022-0-00 | 70.0% | High | 2700 K | 1800 | deviation | comment |
+| 5 | 1-WKL-3020-1-00 | 70.0% | High | 2700 K | 2064 | deviation | comment |
+| 6 | 1-WKL-6024-0-00 | 70.0% | Med | 4000 K | 2000 | deviation | comment |
+| 7 | 1-WKL-4502-0-00 | 70.0% | Med | 4000 K | 1905 | deviation | comment |
+| 8 | 1-WKL-4500-0-00 | 53.8% | High | 2700 K | 1590 | deviation | deviation |
+| 9 | 1-WKL-7102-0-00 | 53.8% | Med | 3000 K | 1400 | comply | deviation |
+| 10 | 1-WKL-3022-1-00 | 53.8% | Med | 4000 K | 2368 | deviation | deviation |
+| 11 | 1-WKL-3010-1-00 | 38.5% | High | 3000 K | 3091 | comply | deviation |
+| 12 | 1-WKL-3026-0-00 | 38.5% | Med | 3000 K | 3650 | comply | deviation |
+| 13 | 1-WKL-7101-0-00 | 30.8% | Med | 2700 K | 1300 | deviation | deviation |
+| 14 | 1-WKL-7103-0-00 | 30.8% | Med | 4000 K | 1550 | deviation | deviation |
+| 15 | 1-WKL-7100-0-00 | 30.8% | Med | 2200 K | 1200 | deviation | deviation |
+| 16 | 1-WKL-3025-0-00 | 15.4% | Med | 2700 K | 3400 | deviation | deviation |
+| 17 | 1-WKL-3027-0-00 | 15.4% | Med | 4000 K | 4300 | deviation | deviation |
+| 18 | 1-WKL-3011-1-00 | 15.4% | Med | 4000 K | 3264 | deviation | deviation |
 
-**Before:** all 6 evaluated SKUs showed `comply` on CCT (false) — the family list always contained 3000 K.
-**After:** only SKUs whose true CCT is 3000 K comply; 2700 K and 2200 K products correctly deviate.
+Disqualified: 1-WKL-4510-0-00 (RGB), 1-WKL-4511-0-00 (RGBW) — colour_family gate.
+
+**Before:** all 6 originally-evaluated SKUs showed `comply` on CCT (false) — the family list always contained 3000 K.
+**After:** only SKUs whose true CCT is 3000 K comply; 2700 K, 2200 K, and 4000 K products correctly deviate.
+
+The sole no-deviation candidate is **1-WKL-6023-0-00** (3000 K, 1850 lm/m). Its lm/m comment (within outer ±10% tolerance) means a specifier note is required but it is not a deviation.
 
 ---
 
