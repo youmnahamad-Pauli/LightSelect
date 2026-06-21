@@ -17,6 +17,7 @@
     "registry:backfill": "tsx src/db/registry-backfill.ts",
     "catalogue:ingest": "tsx src/db/catalogue-ingest.ts",
     "matching:seed": "tsx src/db/matching-seed.ts",
+    "export:compliance": "tsx src/db/export-compliance.ts",
     "db:studio": "drizzle-kit studio"
   },
   "dependencies": {
