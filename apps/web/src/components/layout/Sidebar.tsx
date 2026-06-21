@@ -10,12 +10,14 @@ import {
   Package,
   Settings,
   Flame,
+  SlidersHorizontal,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 const navItems = [
   { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
   { label: 'Projects', href: '/projects', icon: FolderOpen },
+  { label: 'Matching', href: '/matching', icon: SlidersHorizontal },
   { label: 'Categories', href: '/categories', icon: Tag },
   { label: 'Templates', href: '/templates', icon: FileText },
   { label: 'Exports', href: '/exports', icon: Package },

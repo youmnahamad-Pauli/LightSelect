@@ -47,6 +47,9 @@ import type {
   AttributeBatchInput,
   ExtractionJob,
   ExtractionRunResult,
+  MatchingRequirement,
+  MatchDecisionSummary,
+  MatchDecisionDetail,
 } from '@/types';
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
@@ -443,6 +446,32 @@ export const api = {
       request<ExtractionJob[]>(`/project-files/${projectFileId}/extraction-jobs`, { token }),
     getJob: (token: string, jobId: string) =>
       request<ExtractionJob>(`/extraction-jobs/${jobId}`, { token }),
+  },
+
+  matching: {
+    listRequirements: (token: string, orgId: string) =>
+      request<{ count: number; requirements: MatchingRequirement[] }>(
+        `/matching/requirements?org_id=${orgId}`,
+        { token },
+      ),
+    listDecisions: (token: string, requirementId: string) =>
+      request<{ count: number; decisions: MatchDecisionSummary[] }>(
+        `/matching/decisions?requirement_id=${requirementId}`,
+        { token },
+      ),
+    getDecision: (token: string, decisionId: string) =>
+      request<MatchDecisionDetail>(`/matching/decisions/${decisionId}`, { token }),
+    confirmAttr: (token: string, decisionId: string, attributeKey: string) =>
+      request<MatchDecisionDetail>(`/matching/decisions/${decisionId}/confirm-attr`, {
+        method: 'POST',
+        body: JSON.stringify({ attribute_key: attributeKey }),
+        token,
+      }),
+    rerun: (token: string, requirementId: string) =>
+      request<unknown>(`/matching/requirements/${requirementId}/run`, {
+        method: 'POST',
+        token,
+      }),
   },
 };
 

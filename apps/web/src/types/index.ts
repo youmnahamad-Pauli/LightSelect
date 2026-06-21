@@ -741,3 +741,71 @@ export interface ExportBlockedResponse {
   blocking_reasons: string[];
   checklist_summary: ChecklistSnapshot;
 }
+
+// ─── Matching Engine (Phase 3 / Phase 4) ──────────────────────────────────
+
+export interface MatchingRequirement {
+  id: string;
+  org_id: string;
+  name: string;
+  luminaire_type: string;
+  description: string | null;
+  flag_wind_load: boolean;
+  flag_dark_sky: boolean;
+  flag_bend_radius: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export type MatchDecisionStatus = 'evaluated' | 'disqualified' | 'excluded';
+
+export interface GateFailure {
+  attr: string;
+  reason: string;
+  product_value: string | null;
+  required: string;
+}
+
+export interface MatchDecisionSummary {
+  id: string;
+  canonical_product_id: string;
+  display_name: string | null;
+  luminaire_type: string | null;
+  status: MatchDecisionStatus;
+  passed_all_hard_gates: boolean | null;
+  fit_score: number | null;
+  is_fit_capped: boolean;
+  fit_cap_reason: string | null;
+  confidence_score: number | null;
+  confidence_band: string | null;
+  rank: number | null;
+  deviations_high_weight: number;
+  deviations_medium_weight: number;
+  deviations_low_weight: number;
+  comments_count: number;
+  gate_failures: GateFailure[] | null;
+  soft_gate_comments: { attr: string; reason: string }[] | null;
+  evaluated_at: string;
+}
+
+export interface MatchEvidenceRow {
+  id: string;
+  match_decision_id: string;
+  attribute_key: string;
+  required_value: string | null;
+  required_operator: string | null;
+  product_value: string | null;
+  provenance: string | null;
+  verdict: string;
+  is_gate: boolean;
+  gate_type: string | null;
+  weight: number | null;
+  score: number | null;
+  weighted_score: number | null;
+  evidence_note: string | null;
+}
+
+export interface MatchDecisionDetail extends MatchDecisionSummary {
+  requirement_id: string;
+  evidence: MatchEvidenceRow[];
+}
