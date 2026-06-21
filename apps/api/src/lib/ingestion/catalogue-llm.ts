@@ -56,8 +56,10 @@ const ATTRIBUTE_DEFINITIONS = [
   { name: 'colour_mode',       label: 'Colour mode',                     group: 'Electrical'  },
   { name: 'addressability',    label: 'Addressability (static/pixel)',   group: 'Electrical'  },
   { name: 'pixel_protocol',    label: 'Pixel protocol (SPI/DMX)',        group: 'Electrical'  },
-  { name: 'wash_optic',        label: 'Wash / graze / flood optic',      group: 'Photometric' },
-  { name: 'high_temp_variant', label: 'High-temp variant',               group: 'Performance' },
+  { name: 'wash_optic',           label: 'Wash / graze / flood optic',                 group: 'Photometric' },
+  { name: 'high_temp_variant',    label: 'High-temp variant',                          group: 'Performance' },
+  // Informational only — NEVER read by the matching engine
+  { name: 'series_cct_options',   label: 'Series available CCTs (informational list)', group: 'Informational' },
 ] as const;
 
 export const VALID_ATTRIBUTE_NAMES = new Set<string>(ATTRIBUTE_DEFINITIONS.map((a) => a.name));
@@ -70,11 +72,11 @@ const ATTRIBUTE_LIST = ATTRIBUTE_DEFINITIONS
 
 const SYSTEM_PROMPT = `You are a technical data extraction specialist for lighting product catalogues.
 
-Analyse the provided lighting catalogue PDF and identify every distinct product family or SKU.
+Analyse the provided lighting catalogue PDF and identify every distinct product SKU.
 
 Return ONLY a valid JSON object — no markdown fences, no prose, no comments.
 The object must have exactly one key "products" containing an array.
-Each element represents one distinct product and must have exactly these fields:
+Each element represents one distinct SKU and must have exactly these fields:
 
 {
   "manufacturer":  string   — brand or manufacturer name as printed in the catalogue,
@@ -89,14 +91,36 @@ For "attributes":
 - "confidence" is 0.0 (uncertain/inferred) to 1.0 (unambiguous, verbatim from text or table).
 - Omit an attribute entirely if it is not present — do not include it with a null or empty value.
 - If a per-metre value is given (e.g. for LED strips), use watts_per_metre and lumens_per_metre rather than watts and lumens.
-- If multiple CCT or wattage options are listed for the same model, list the primary/baseline value and add a note in the "notes" attribute.
 - Do not invent attribute names. Only use the names listed below.
+
+CRITICAL RULE — cct (colour temperature of THIS specific SKU):
+  A single SKU has exactly ONE colour temperature. You MUST resolve cct to a single integer in Kelvin.
+  Resolution order (use the first that applies):
+    1. The specification table or datasheet row for this exact SKU lists a single CCT → use that number.
+    2. The catalogue publishes an order-code legend or key (e.g. "3020 = 3000K, 20W") → decode the
+       CCT from THIS SKU's model code using that legend. Trust the catalogue's own key exactly.
+    3. A combined type/CCT/wattage name (e.g. "WKL 3020" where "30" means 3000K per the legend) →
+       decode as above.
+  NEVER assign the product family's full list of available CCTs to an individual SKU's cct attribute.
+  That list belongs in series_cct_options (informational only — see below).
+  Output format for cct: a plain integer or integer string, e.g. "3000" not "3000K" not "2700K, 3000K".
+
+CRITICAL RULE — series_cct_options (informational, NOT read by matching):
+  Use this attribute to record the family's full available-CCT menu as a comma-separated list.
+  e.g. "2700, 3000, 4000" or "2700K, 3000K, 4000K, 5000K". This is for browsing/reference only.
+
+CRITICAL RULE — lumens_per_metre (output of THIS specific SKU):
+  Extract THIS SKU's own lm/m from its specific row in the specification table.
+  If the SKU's own row gives a single figure, use that. If it gives a genuine binning tolerance
+  for that one SKU (e.g. "2050–2150 lm/m"), use that tight range.
+  Do NOT record a span that mixes different SKUs (e.g. "1500–3500 lm/m" across the whole range).
+  If you cannot determine this SKU's own lm/m separately from the family range, omit the attribute.
 
 Valid attribute names:
 ${ATTRIBUTE_LIST}
 
-Products to detect: every item that has its own model code, order code, or distinct specification table.
-If a page shows the same product in multiple finish or CCT variants without separate model codes, treat it as one product.`;
+Products to detect: every item that has its own model code, order code, or distinct specification row.
+Different CCT or wattage options with separate model codes must each be a separate product entry.`;
 
 // ─── LLM client ────────────────────────────────────────────────────────────
 
@@ -163,9 +187,13 @@ export async function detectAndExtractFromCatalogue(params: {
   const client = new Anthropic({ apiKey });
   const startMs = Date.now();
 
+  const filterInstruction = modelFilter && modelFilter.length > 0
+    ? ` Restrict extraction to products whose model code contains any of: ${modelFilter.map((f) => `"${f}"`).join(', ')}. Skip all other products.`
+    : '';
+
   const response = await client.messages.create({
     model,
-    max_tokens: 8192,
+    max_tokens: 16000,
     system: SYSTEM_PROMPT,
     messages: [
       {
@@ -181,7 +209,7 @@ export async function detectAndExtractFromCatalogue(params: {
           } as Anthropic.DocumentBlockParam,
           {
             type: 'text',
-            text: 'Extract all products and their attributes from this lighting catalogue. Return only the JSON object.',
+            text: `Extract all products and their attributes from this lighting catalogue. Return only the JSON object.${filterInstruction}`,
           },
         ],
       },

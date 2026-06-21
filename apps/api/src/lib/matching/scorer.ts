@@ -78,9 +78,25 @@ export function evaluateScoredAttributes(
           break;
         case 'match_target_cct': {
           const reqK = parseAttributeValue(attr.target_value).primary;
-          verdict = reqK !== null
-            ? compareMatchTargetCct(productRaw, reqK, C.CCT_OUTER_ABS_K)
-            : 'not_applicable';
+          if (reqK === null) {
+            verdict = 'not_applicable';
+            break;
+          }
+          if (attrRow?.cct_kelvin != null) {
+            // Structured single value — compare directly
+            const delta = Math.abs(attrRow.cct_kelvin - reqK);
+            verdict = delta === 0 ? 'comply' : delta <= C.CCT_OUTER_ABS_K ? 'comment' : 'deviation';
+          } else {
+            // Legacy path: check if the raw value is a multi-value list
+            const parsed = parseAttributeValue(productRaw);
+            if (parsed.items.length > 1) {
+              // Multi-value CCT stored at family level — data needs per-SKU re-ingestion
+              verdict = 'deviation';
+              evidenceNote = `cct: value "${productRaw}" is a family-level list, not this SKU's CCT — re-ingest to resolve per-SKU value`;
+            } else {
+              verdict = compareMatchTargetCct(productRaw, reqK, C.CCT_OUTER_ABS_K);
+            }
+          }
           break;
         }
         default:

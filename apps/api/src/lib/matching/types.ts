@@ -35,6 +35,12 @@ export interface ResolvedAttributeValue {
   provenance: ProvenanceState;
   /** True when value_state = 'not_applicable': explicitly N/A, excluded from scoring denominator. */
   is_explicit_na: boolean;
+  /**
+   * Structured single CCT value in Kelvin. Set when attribute_key = 'cct' and the ingested
+   * value was resolved to a single integer. The CCT comparator reads this first; falls back to
+   * parsing attribute_value when null (legacy rows not yet re-ingested).
+   */
+  cct_kelvin: number | null;
 }
 
 /** Fully loaded candidate product for matching. */
