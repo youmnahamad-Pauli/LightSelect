@@ -9,7 +9,7 @@
  * GET  /matching/decisions/:id                        — decision + evidence detail
  */
 import { Router, type Request, type Response, type NextFunction } from 'express';
-import { eq } from 'drizzle-orm';
+import { eq, and } from 'drizzle-orm';
 import postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { db } from '../db/client';
@@ -18,7 +18,7 @@ import {
   match_decisions, match_evidence,
   type MatchingOperator,
 } from '../db/schema/matching';
-import { canonical_products } from '../db/schema/registry';
+import { canonical_products, product_attribute_values } from '../db/schema/registry';
 import {
   loadRequirement, loadCandidates, runEvaluation, persistResults,
 } from '../lib/matching/engine';
@@ -163,19 +163,25 @@ matchingRouter.get('/decisions', async (req: Request, res: Response, next: NextF
 
     const decisions = await db
       .select({
-        id: match_decisions.id,
-        canonical_product_id: match_decisions.canonical_product_id,
-        display_name: canonical_products.display_name,
-        status: match_decisions.status,
-        passed_all_hard_gates: match_decisions.passed_all_hard_gates,
-        fit_score: match_decisions.fit_score,
-        is_fit_capped: match_decisions.is_fit_capped,
-        confidence_score: match_decisions.confidence_score,
-        confidence_band: match_decisions.confidence_band,
-        rank: match_decisions.rank,
-        deviations_high_weight: match_decisions.deviations_high_weight,
-        comments_count: match_decisions.comments_count,
-        gate_failures: match_decisions.gate_failures,
+        id:                     match_decisions.id,
+        canonical_product_id:   match_decisions.canonical_product_id,
+        display_name:           canonical_products.display_name,
+        luminaire_type:         canonical_products.luminaire_type,
+        status:                 match_decisions.status,
+        passed_all_hard_gates:  match_decisions.passed_all_hard_gates,
+        fit_score:              match_decisions.fit_score,
+        is_fit_capped:          match_decisions.is_fit_capped,
+        fit_cap_reason:         match_decisions.fit_cap_reason,
+        confidence_score:       match_decisions.confidence_score,
+        confidence_band:        match_decisions.confidence_band,
+        rank:                   match_decisions.rank,
+        deviations_high_weight:   match_decisions.deviations_high_weight,
+        deviations_medium_weight: match_decisions.deviations_medium_weight,
+        deviations_low_weight:    match_decisions.deviations_low_weight,
+        comments_count:           match_decisions.comments_count,
+        gate_failures:          match_decisions.gate_failures,
+        soft_gate_comments:     match_decisions.soft_gate_comments,
+        evaluated_at:           match_decisions.evaluated_at,
       })
       .from(match_decisions)
       .leftJoin(canonical_products, eq(match_decisions.canonical_product_id, canonical_products.id))
@@ -198,11 +204,102 @@ matchingRouter.get('/decisions/:id', async (req: Request, res: Response, next: N
 
     if (!decision) return res.status(404).json({ error: 'Decision not found' });
 
+    const product = await db
+      .select({ display_name: canonical_products.display_name, luminaire_type: canonical_products.luminaire_type })
+      .from(canonical_products)
+      .where(eq(canonical_products.id, decision.canonical_product_id))
+      .limit(1);
+
     const evidence = await db
       .select()
       .from(match_evidence)
       .where(eq(match_evidence.match_decision_id, decision.id));
 
-    return success(res, { ...decision, evidence });
+    return success(res, {
+      ...decision,
+      display_name: product[0]?.display_name ?? null,
+      luminaire_type: product[0]?.luminaire_type ?? null,
+      evidence,
+    });
+  } catch (err) { return next(err); }
+});
+
+// ── Confirm attribute value (set human_confirmed) + re-run ───────────────────
+
+matchingRouter.post('/decisions/:id/confirm-attr', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const decisionId = req.params.id;
+    const { attribute_key } = req.body as { attribute_key: string };
+    if (!attribute_key) return res.status(400).json({ error: 'attribute_key required' });
+
+    // Load the decision to get canonical_product_id and requirement_id
+    const [decision] = await db
+      .select({
+        id: match_decisions.id,
+        requirement_id: match_decisions.requirement_id,
+        canonical_product_id: match_decisions.canonical_product_id,
+      })
+      .from(match_decisions)
+      .where(eq(match_decisions.id, decisionId))
+      .limit(1);
+
+    if (!decision) return res.status(404).json({ error: 'Decision not found' });
+
+    // Update provenance on the product_attribute_values row
+    await db
+      .update(product_attribute_values)
+      .set({ provenance_state: 'human_confirmed', updated_at: new Date() })
+      .where(
+        and(
+          eq(product_attribute_values.canonical_product_id, decision.canonical_product_id),
+          eq(product_attribute_values.attribute_key, attribute_key),
+        ),
+      );
+
+    // Re-run the full matching evaluation for this requirement
+    const sqlClient = postgres(process.env.DATABASE_URL!, { max: 1 });
+    const pgDb = drizzle(sqlClient);
+
+    const requirement = await loadRequirement(pgDb, decision.requirement_id);
+    if (!requirement) {
+      await sqlClient.end();
+      return res.status(404).json({ error: 'Requirement not found' });
+    }
+
+    const [reqRow] = await db
+      .select({ org_id: matching_requirements.org_id })
+      .from(matching_requirements)
+      .where(eq(matching_requirements.id, decision.requirement_id))
+      .limit(1);
+
+    const candidates = await loadCandidates(pgDb, reqRow?.org_id ?? requirement.org_id);
+    const evaluations = runEvaluation(requirement, candidates);
+    await persistResults(pgDb, evaluations as any);
+    await sqlClient.end();
+
+    // Return the updated decision + evidence
+    const [updatedDecision] = await db
+      .select()
+      .from(match_decisions)
+      .where(eq(match_decisions.id, decisionId))
+      .limit(1);
+
+    const product = await db
+      .select({ display_name: canonical_products.display_name, luminaire_type: canonical_products.luminaire_type })
+      .from(canonical_products)
+      .where(eq(canonical_products.id, decision.canonical_product_id))
+      .limit(1);
+
+    const updatedEvidence = await db
+      .select()
+      .from(match_evidence)
+      .where(eq(match_evidence.match_decision_id, decisionId));
+
+    return success(res, {
+      ...updatedDecision,
+      display_name: product[0]?.display_name ?? null,
+      luminaire_type: product[0]?.luminaire_type ?? null,
+      evidence: updatedEvidence,
+    });
   } catch (err) { return next(err); }
 });

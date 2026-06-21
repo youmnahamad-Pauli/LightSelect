@@ -77,7 +77,7 @@ interface AttributeRow {
 
 function StatusDot({ row }: { row: AttributeRow }) {
   if (row.source === 'na') {
-    return <MinusCircle className="h-4 w-4 text-slate-400" title="Marked as N/A" />;
+    return <MinusCircle className="h-4 w-4 text-slate-400" aria-label="Marked as N/A" />;
   }
   if (row.source === 'extracted') {
     const pct = row.confidence != null ? Math.round(row.confidence * 100) : null;
@@ -89,9 +89,9 @@ function StatusDot({ row }: { row: AttributeRow }) {
     );
   }
   if (row.value.trim()) {
-    return <CheckCircle2 className="h-4 w-4 text-emerald-500" title="Value set" />;
+    return <CheckCircle2 className="h-4 w-4 text-emerald-500" aria-label="Value set" />;
   }
-  return <AlertCircle className="h-4 w-4 text-amber-400" title="No value set" />;
+  return <AlertCircle className="h-4 w-4 text-amber-400" aria-label="No value set" />;
 }
 
 // ─── Single attribute row ──────────────────────────────────────────────────
