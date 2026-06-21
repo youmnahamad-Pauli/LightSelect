@@ -33,6 +33,8 @@ export interface ResolvedAttributeValue {
   attribute_key: string;
   attribute_value: string | null;
   provenance: ProvenanceState;
+  /** True when value_state = 'not_applicable': explicitly N/A, excluded from scoring denominator. */
+  is_explicit_na: boolean;
 }
 
 /** Fully loaded candidate product for matching. */

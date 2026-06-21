@@ -12,10 +12,20 @@ import type { AttributeVerdict } from './types';
 import type { VerdictType } from '../../db/schema/matching';
 import type { ProvenanceState } from '../../db/schema/matching';
 import {
-  compareGte, compareLte, compareEq, compareContainsValue, compareMatchTarget,
+  compareGte, compareLte, compareEq, compareContainsValue,
+  compareMatchTarget, compareMatchTargetCct,
 } from './comparators';
-import { parseIpRating } from './parse-value';
+import { parseIpRating, parseAttributeValue } from './parse-value';
 import { MATCHING_CONFIG as C } from './config';
+
+// Attributes where unconfirmed basis (lumen output not test-backed) warrants a comment flag
+const LUMEN_BASIS_ATTRS = new Set(['lumens', 'lumens_per_metre']);
+
+// Provenances that confirm the lumen value is a measured delivered output
+const CONFIRMED_LUMEN_PROVENANCE = new Set<ProvenanceState>([
+  'test_report_backed',
+  'manufacturer_confirmed',
+]);
 
 /** Evaluate all scored (non-gate) attributes for one candidate. */
 export function evaluateScoredAttributes(
@@ -25,17 +35,21 @@ export function evaluateScoredAttributes(
   const results: AttributeVerdict[] = [];
 
   for (const attr of scoredAttrs) {
-    if (!attr.weight) continue; // guard: weight required for scored attrs
+    if (!attr.weight) continue;
 
-    const attrRow = candidate.attributes.get(attr.attribute_key);
-    const productRaw  = attrRow?.attribute_value ?? null;
+    const attrRow   = candidate.attributes.get(attr.attribute_key);
+    const productRaw: string | null = attrRow?.attribute_value ?? null;
     const provenance: ProvenanceState = attrRow?.provenance ?? 'missing';
 
     let verdict: VerdictType;
+    let evidenceNote: string | null = null;
 
-    if (!productRaw) {
-      // Missing value: treat as not_applicable for scoring (excluded from weight total)
+    if (attrRow?.is_explicit_na) {
+      // Explicitly tagged not_applicable: excluded from denominator
       verdict = 'not_applicable';
+    } else if (!productRaw) {
+      // Missing: required attribute has no value → DEVIATION (included in weight total)
+      verdict = 'deviation';
     } else {
       switch (attr.operator) {
         case 'gte':
@@ -62,8 +76,25 @@ export function evaluateScoredAttributes(
             attr.tolerance_outer_pct ?? C.DEFAULT_OUTER_TOLERANCE_PCT,
           );
           break;
+        case 'match_target_cct': {
+          const reqK = parseAttributeValue(attr.target_value).primary;
+          verdict = reqK !== null
+            ? compareMatchTargetCct(productRaw, reqK, C.CCT_OUTER_ABS_K)
+            : 'not_applicable';
+          break;
+        }
         default:
           verdict = 'not_applicable';
+      }
+
+      // Change 5: lumen basis flag — downgrade 'comply' to 'comment' when basis is unconfirmed
+      if (
+        verdict === 'comply' &&
+        LUMEN_BASIS_ATTRS.has(attr.attribute_key) &&
+        !CONFIRMED_LUMEN_PROVENANCE.has(provenance)
+      ) {
+        verdict = 'comment';
+        evidenceNote = `${attr.attribute_key}: ${productRaw} meets target ${attr.target_value}${attr.target_unit ? ' ' + attr.target_unit : ''} — delivered output basis unconfirmed (verify from test report)`;
       }
     }
 
@@ -82,7 +113,7 @@ export function evaluateScoredAttributes(
       weight:           attr.weight,
       score,
       weighted_score: weightedScore,
-      evidence_note:    buildNote(attr, productRaw, verdict),
+      evidence_note: evidenceNote ?? buildNote(attr, productRaw, verdict),
     });
   }
 
@@ -106,7 +137,6 @@ export function calculateFit(scoredVerdicts: AttributeVerdict[]): {
   const totalWeight = applicable.reduce((s, v) => s + (v.weight ?? 0), 0);
   const totalScore  = applicable.reduce((s, v) => s + (v.weighted_score ?? 0), 0);
 
-  // Return null fit when no applicable scored attributes — "insufficient data" not "perfect match"
   if (applicable.length === 0) {
     return {
       fit_score: 0,
@@ -120,7 +150,6 @@ export function calculateFit(scoredVerdicts: AttributeVerdict[]): {
   }
   const rawFit = totalWeight > 0 ? (totalScore / totalWeight) * 100 : 0;
 
-  // Count deviations by weight band
   const deviations = applicable.filter((v) => v.verdict === 'deviation');
   const deviations_high_weight   = deviations.filter((v) => (v.weight ?? 0) >= C.HIGH_WEIGHT_THRESHOLD).length;
   const deviations_medium_weight = deviations.filter(
@@ -163,8 +192,11 @@ function buildNote(attr: LoadedRequirementAttr, productRaw: string | null, verdi
   switch (verdict) {
     case 'comply':   return `${attr.attribute_key}: ${prod} meets ${req}`;
     case 'comment':  return `${attr.attribute_key}: ${prod} — within outer tolerance of ${req} (comment)`;
-    case 'deviation': return `${attr.attribute_key}: ${prod} does not meet ${req}`;
-    case 'not_applicable': return `${attr.attribute_key}: not found / not applicable for this product`;
+    case 'deviation':
+      return productRaw
+        ? `${attr.attribute_key}: ${prod} does not meet ${req}`
+        : `${attr.attribute_key}: no value found — required ${req}`;
+    case 'not_applicable': return `${attr.attribute_key}: not applicable for this product`;
     default: return `${attr.attribute_key}: ${prod} vs ${req}`;
   }
 }

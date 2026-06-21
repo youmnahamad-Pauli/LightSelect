@@ -18,6 +18,7 @@ import {
   compareDimmingContains,
   compareRangeCovers,
   compareCertifications,
+  compareColourFamilyGate,
 } from './comparators';
 import { MATCHING_CONFIG as C } from './config';
 
@@ -92,6 +93,11 @@ export function evaluateGates(
         break;
       }
 
+      case 'colour_family_gate':
+        verdict = compareColourFamilyGate(productRaw, attr.target_value);
+        note = buildNote(attr, productRaw, verdict);
+        break;
+
       default:
         verdict = 'gate_unverifiable';
         note = `Unknown gate operator: ${attr.operator}`;
@@ -165,6 +171,7 @@ function operatorLabel(op: string): string {
     case 'contains_value': return 'contains';
     case 'range_covers': return 'covers';
     case 'contains_required_cert': return 'holds cert';
+    case 'colour_family_gate': return 'colour-family=';
     default: return op;
   }
 }

@@ -69,9 +69,10 @@ export async function loadCandidates(db: NodePgDatabase<any>, orgId: string): Pr
     const attrMap = new Map<string, ResolvedAttributeValue>();
     for (const row of attrRows) {
       attrMap.set(row.attribute_key, {
-        attribute_key: row.attribute_key,
+        attribute_key:   row.attribute_key,
         attribute_value: row.attribute_value,
-        provenance: resolveProvenance(row.provenance_state, row.value_state),
+        provenance:      resolveProvenance(row.provenance_state, row.value_state),
+        is_explicit_na:  row.value_state === 'not_applicable',
       });
     }
 
