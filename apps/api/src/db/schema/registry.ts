@@ -25,6 +25,7 @@
  * Variants (different CCT / finish / optic reflected in model code) → separate records.
  */
 import { pgTable, uuid, text, real, uniqueIndex, timestamp } from 'drizzle-orm/pg-core';
+import type { ProvenanceState } from './matching';
 import { organizations } from './organizations';
 import { categories } from './categories';
 import { products } from './products';
@@ -87,6 +88,18 @@ export const canonical_products = pgTable(
      * Used by the review UI to surface potential duplicates for human judgement.
      */
     soft_match_hint: text('soft_match_hint'),
+    /**
+     * Phase 3 — luminaire classification used for type-scoping in the matching engine.
+     * e.g. 'flexible_tape' | 'downlight' | 'linear' | 'profile' | 'wall_washer'
+     * Null = unclassified (engine skips type-scoping check).
+     */
+    luminaire_type: text('luminaire_type'),
+    /**
+     * Phase 3 — certifications / approval scheme approvals this product holds.
+     * e.g. ['DEWA', 'Civil Defence', 'ADQCC']
+     * Populated by human review or import; used in Phase 3 soft-gate evaluation.
+     */
+    approvals_held: text('approvals_held').array(),
     created_at: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updated_at: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
@@ -152,6 +165,13 @@ export const product_attribute_values = pgTable(
      * not_applicable — attribute explicitly marked N/A for this product.
      */
     value_state: text('value_state').$type<AttributeValueState>().notNull().default('extracted'),
+    /**
+     * Phase 3 extended provenance (superset of value_state).
+     * When set, the matching engine uses this; otherwise falls back from value_state.
+     * test_report_backed | manufacturer_confirmed → confidence 1.0
+     * human_confirmed → 0.9 | extracted → 0.6 | missing → 0.0
+     */
+    provenance_state: text('provenance_state').$type<ProvenanceState>(),
     /** The product row this value was drawn from. Null if manually set or source deleted. */
     source_product_id: uuid('source_product_id').references(() => products.id, { onDelete: 'set null' }),
     /** 0.0–1.0; null for manually entered values. */

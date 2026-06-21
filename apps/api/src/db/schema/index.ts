@@ -13,3 +13,4 @@ export * from './boq';
 export * from './exports';
 export * from './catalogue';
 export * from './registry';
+export * from './matching';
