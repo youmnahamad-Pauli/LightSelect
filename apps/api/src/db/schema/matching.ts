@@ -32,8 +32,9 @@ export const matchDecisionStatuses = [
   /**
    * Passed all gates but the requirement specifies a lumen output and this
    * candidate's delivered lumen is pending characterisation (bare
-   * component_build strip with no configured diffuser combo). No headline fit
-   * score; surfaces in a distinct group below all assessed candidates.
+   * component_build strip with no configured diffuser combo). Candidate has
+   * evidence for non-lumen attributes but NO headline fit score and is NOT
+   * ranked among assessed candidates. Surfaces in a distinct UI group.
    */
   'pending_characterisation',
 ] as const;
@@ -48,9 +49,10 @@ export const verdictTypes = [
   'gate_fail',
   'gate_unverifiable',
   /**
-   * Bare component_build strip where delivered lumen output cannot be assessed
-   * (no characterised diffuser transmission). Excluded from fit score;
-   * included in confidence at 0.0 to lower confidence band.
+   * bare component_build strip where delivered lumen output cannot be
+   * assessed (diffuser transmission not characterised). Excluded from fit
+   * score; included in confidence at score=0.0 to lower confidence band.
+   * Flagged prominently in exports as "delivered pending — not assessable".
    */
   'delivered_pending',
 ] as const;
@@ -82,8 +84,8 @@ export const matching_requirements = pgTable('matching_requirements', {
   /** Certifications or scheme approvals that candidate products must hold or obtain. */
   approvals_required: text('approvals_required').array(),
   /**
-   * Optional item/line code from the consultant schedule, e.g. "LCL-015".
-   * Used as the XLSX sheet name in consultant exports. Null → export uses a derived fallback.
+   * Optional item/line code used as the XLSX sheet name in consultant exports.
+   * E.g. "FLEX-TAPE", "DOWNLIGHT-01". Null → export uses a derived fallback.
    */
   item_code: text('item_code'),
   /**

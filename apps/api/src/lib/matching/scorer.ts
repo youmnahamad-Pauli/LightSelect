@@ -112,11 +112,13 @@ export function evaluateScoredAttributes(
           break;
         }
         case 'match_target_lumen': {
-          // Bare component_build strip: delivered lumen output cannot be assessed
-          const archetypeAttr = candidate.attributes.get('archetype');
-          if (archetypeAttr?.attribute_value === 'component_build' && !candidate.is_configured_product) {
+          // Bare component_build strip without a configured diffuser: delivered
+          // lumen output is unknown. Mark as delivered_pending — excluded from fit
+          // score but counted at provenance=0.0 to lower confidence.
+          const archetype = candidate.attributes.get('archetype')?.attribute_value;
+          if (archetype === 'component_build' && !candidate.is_configured_product) {
             verdict = 'delivered_pending';
-            evidenceNote = `${attr.attribute_key}: delivered lumen output not assessable — bare strip, diffuser transmission not characterised`;
+            evidenceNote = `${attr.attribute_key}: delivered lumen output not assessable — bare strip, diffuser transmission not characterised. Source: ${productRaw ?? '(missing)'} ${attr.target_unit ?? ''}`;
             break;
           }
           const dimmableRaw  = candidate.attributes.get('dimmable')?.attribute_value ?? null;
@@ -235,7 +237,7 @@ function verdictScore(verdict: VerdictType): number | null {
     case 'comply':  return C.SCORE_COMPLY;
     case 'comment': return C.SCORE_COMMENT;
     case 'deviation': return C.SCORE_DEVIATION;
-    case 'delivered_pending': return null;
+    case 'delivered_pending': return null; // excluded from fit; counted in confidence at 0.0
     default: return null; // not_applicable excluded from scoring
   }
 }

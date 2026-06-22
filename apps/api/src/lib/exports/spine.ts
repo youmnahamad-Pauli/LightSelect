@@ -16,12 +16,13 @@ import {
   match_evidence,
 } from '../../db/schema/matching';
 import { canonical_products, product_attribute_values } from '../../db/schema/registry';
+import { delivery_combos } from '../../db/schema/delivery-combos';
 import type { VerdictType } from '../../db/schema/matching';
 import type { CanonicalProduct } from '../../db/schema/registry';
 import type {
   ComplianceStatement, StatementMetadata, ProposedProduct,
   AttributeEntry, GateResult, SpineVerdict,
-  ProductArchetype, LumenRepresentation,
+  ProductArchetype, LumenRepresentation, ComponentIdentity,
 } from './types';
 
 // ─── Attribute label map ──────────────────────────────────────────────────────
@@ -92,6 +93,8 @@ function toSpineVerdict(v: VerdictType): SpineVerdict | null {
       return 'comply_with_comment';
     case 'not_applicable':
       return null;
+    case 'delivered_pending':
+      return 'delivered_pending';
     default:
       return null;
   }
@@ -128,27 +131,20 @@ function cleanComment(
 // ─── Archetype detection ──────────────────────────────────────────────────────
 
 /**
- * Detect construction archetype from product attributes and model code.
+ * Detect construction archetype from the explicit 'archetype' product attribute.
  *
- * Priority:
- *   1. Explicit 'archetype' product attribute ('preassembled' | 'component_build')
- *   2. WKL model code prefix → component_build (strip + profile + diffuser)
- *   3. Fallback → unknown (logged for human review)
+ * ONLY the explicit attribute is authoritative — no model-code heuristics.
+ * Any product without an explicit archetype attribute is 'unknown'; exports
+ * will flag it prominently for human review.
  */
 function detectArchetype(
-  product: CanonicalProduct | undefined,
+  _product: CanonicalProduct | undefined,
   productAttrMap: Map<string, string | null>,
 ): ProductArchetype {
   const explicit = productAttrMap.get('archetype');
   if (explicit === 'preassembled' || explicit === 'component_build') {
     return explicit;
   }
-
-  const modelCode = (product?.canonical_model_code ?? '').toLowerCase();
-  if (modelCode.startsWith('1wkl')) {
-    return 'component_build';
-  }
-
   return 'unknown';
 }
 
@@ -211,6 +207,8 @@ function buildLumenRepresentation(
     diffuserTransmission > 0 &&
     diffuserTransmission <= 1;
 
+  const transmissionProvenance = productAttrMap.get('transmission_provenance') ?? null;
+
   switch (archetype) {
     case 'component_build': {
       const deliveredLumens = transmissionValid
@@ -224,43 +222,44 @@ function buildLumenRepresentation(
           ? Math.round((deliveredLumens / watts) * 10) / 10
           : null;
       return {
-        source_lumens:        sourceLumens,
-        delivered_lumens:     deliveredLumens,
-        basis:                'source',
-        diffuser_transmission: transmissionValid ? diffuserTransmission : null,
+        source_lumens:           sourceLumens,
+        delivered_lumens:        deliveredLumens,
+        basis:                   'source',
+        diffuser_transmission:   transmissionValid ? diffuserTransmission : null,
+        transmission_provenance: transmissionValid ? transmissionProvenance : null,
         unit,
-        efficacy_lm_per_w:   efficacy,
-        pending_reason:       pendingReason,
+        efficacy_lm_per_w:       efficacy,
+        pending_reason:          pendingReason,
       };
     }
 
     case 'preassembled': {
-      // Published figure IS the delivered output
       const efficacy =
         sourceLumens !== null && watts !== null && watts > 0
           ? Math.round((sourceLumens / watts) * 10) / 10
           : null;
       return {
-        source_lumens:        null,
-        delivered_lumens:     sourceLumens,
-        basis:                'delivered',
-        diffuser_transmission: null,
+        source_lumens:           null,
+        delivered_lumens:        sourceLumens,
+        basis:                   'delivered',
+        diffuser_transmission:   null,
+        transmission_provenance: null,
         unit,
-        efficacy_lm_per_w:   efficacy,
-        pending_reason:       null,
+        efficacy_lm_per_w:       efficacy,
+        pending_reason:          null,
       };
     }
 
     default: {
-      // unknown — expose source; flag that basis is unconfirmed
       return {
-        source_lumens:        sourceLumens,
-        delivered_lumens:     sourceLumens,
-        basis:                'source',
-        diffuser_transmission: null,
+        source_lumens:           sourceLumens,
+        delivered_lumens:        sourceLumens,
+        basis:                   'source',
+        diffuser_transmission:   null,
+        transmission_provenance: null,
         unit,
-        efficacy_lm_per_w:   null,
-        pending_reason:       'archetype unknown — lumen basis unconfirmed',
+        efficacy_lm_per_w:       null,
+        pending_reason:          'archetype unknown — lumen basis unconfirmed',
       };
     }
   }
@@ -370,7 +369,47 @@ export class MatchDecisionExportSource {
       productAttrRows.map((a) => [a.attribute_key, a.attribute_value]),
     );
 
-    // ── 5. Build metadata ────────────────────────────────────────────────
+    // ── 5. Configured product component lookup ───────────────────────────
+
+    let isConfiguredProduct = false;
+    let luminaireComponent: ComponentIdentity | null = null;
+    let lampComponent: ComponentIdentity | null = null;
+
+    if (productAttrMap.get('is_configured_product') === 'true') {
+      isConfiguredProduct = true;
+
+      const [configRow] = await db
+        .select()
+        .from(delivery_combos)
+        .where(eq(delivery_combos.canonical_product_id, decision.canonical_product_id))
+        .limit(1);
+
+      if (configRow) {
+        luminaireComponent = {
+          manufacturer: configRow.profile_manufacturer,
+          model_code:   configRow.profile_model_code,
+          display_name: configRow.profile_name,
+        };
+
+        // Strip / lamp component — look up the strip's canonical product
+        const [stripProduct] = await db
+          .select()
+          .from(canonical_products)
+          .where(eq(canonical_products.id, configRow.strip_canonical_product_id))
+          .limit(1);
+
+        if (stripProduct) {
+          const stripParts = (stripProduct.display_name ?? '').split(' — ');
+          lampComponent = {
+            manufacturer: stripParts.length >= 2 ? stripParts[0].trim() : null,
+            model_code:   stripParts.length >= 2 ? stripParts.slice(1).join(' — ').trim() : null,
+            display_name: stripProduct.display_name,
+          };
+        }
+      }
+    }
+
+    // ── 6. Build metadata ────────────────────────────────────────────────
 
     const today = new Date().toLocaleDateString('en-GB', {
       day: '2-digit', month: 'short', year: 'numeric',
@@ -387,11 +426,11 @@ export class MatchDecisionExportSource {
       date:         options?.date         ?? today,
       revision:     options?.revision     ?? 'Rev A',
       ref:          options?.ref          ?? req.id.slice(0, 8).toUpperCase(),
-      item_code:    options?.item_code    ?? luminaireSlug,
+      item_code:    options?.item_code    ?? req.item_code ?? luminaireSlug,
       item_type:    options?.item_type    ?? req.name,
     };
 
-    // ── 6. Build attribute entries ───────────────────────────────────────
+    // ── 7. Build attribute entries ───────────────────────────────────────
 
     const attributes: AttributeEntry[] = evidence.map((ev) => {
       const reqAttr = reqAttrMap.get(ev.attribute_key);
@@ -418,7 +457,7 @@ export class MatchDecisionExportSource {
       };
     });
 
-    // ── 7. Gate results (summary of gate evidence) ───────────────────────
+    // ── 8. Gate results (summary of gate evidence) ───────────────────────
 
     const gateResults: GateResult[] = evidence
       .filter((ev) => ev.is_gate)
@@ -437,7 +476,7 @@ export class MatchDecisionExportSource {
         };
       });
 
-    // ── 8. Proposed product with archetype + lumen representation ────────
+    // ── 9. Proposed product with archetype + lumen representation ────────
 
     // Prefer a confirmed/extracted 'manufacturer' attribute; fall back to the
     // display_name prefix (e.g. "ILTI LUCE" from "ILTI LUCE — 1-WKL-6023-0-00")
@@ -469,6 +508,9 @@ export class MatchDecisionExportSource {
       rank:              decision.rank ?? null,
       archetype,
       lumen_representation: lumenRepresentation,
+      is_configured_product: isConfiguredProduct,
+      luminaire_component:   luminaireComponent,
+      lamp_component:        lampComponent,
       raw_attributes:    rawAttributes,
     };
 

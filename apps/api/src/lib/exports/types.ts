@@ -15,7 +15,18 @@
  */
 
 /** Normalised verdict for the export spine. */
-export type SpineVerdict = 'comply' | 'comply_with_comment' | 'deviation';
+export type SpineVerdict = 'comply' | 'comply_with_comment' | 'deviation' | 'delivered_pending';
+
+/**
+ * Identity fields for one physical component within a configured product.
+ *   luminaire_component — the profile/diffuser (AECOM Section 1: LUMINAIRE)
+ *   lamp_component      — the LED strip/tape  (AECOM Section 2: LAMP / SOURCE)
+ */
+export interface ComponentIdentity {
+  manufacturer: string | null;
+  model_code: string | null;
+  display_name: string | null;
+}
 
 /**
  * Physical construction archetype of the proposed product.
@@ -49,6 +60,8 @@ export interface LumenRepresentation {
   basis: 'source' | 'delivered';
   /** Fractional transmission (0.0–1.0). Null if not characterised. */
   diffuser_transmission: number | null;
+  /** How transmission was obtained: 'combo_tested' | 'published' | 'estimated'. Null if no transmission. */
+  transmission_provenance: string | null;
   /** Unit string, e.g. "lm/m" for tape, "lm" for fixture. */
   unit: string;
   /** Delivered ÷ wattage (lm/W). Null when delivered is pending. */
@@ -86,6 +99,21 @@ export interface ProposedProduct {
    * Null if no lumen attribute was found in the product data or evidence.
    */
   lumen_representation: LumenRepresentation | null;
+  /**
+   * True when this product is a configured product (strip + profile/diffuser combo).
+   * Templates use this to decide whether to render component sections separately.
+   */
+  is_configured_product: boolean;
+  /**
+   * Profile/diffuser component identity. Non-null for configured products.
+   * Maps to AECOM Section 1 (LUMINAIRE / FIXTURE).
+   */
+  luminaire_component: ComponentIdentity | null;
+  /**
+   * LED strip/tape component identity. Non-null for configured products.
+   * Maps to AECOM Section 2 (LAMP / SOURCE).
+   */
+  lamp_component: ComponentIdentity | null;
   /**
    * All raw product_attribute_values for this product, keyed by attribute_key.
    * Templates can reach any attribute not surfaced by adjudicated evidence.

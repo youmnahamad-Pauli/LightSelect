@@ -40,8 +40,22 @@
     {
       "idx": 5,
       "version": "7",
-      "when": 1782345600000,
-      "tag": "0005_spec_parser",
+      "when": 1782172800000,
+      "tag": "0005_configured_products",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1782259200000,
+      "tag": "0006_delivery_combos",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1782432000000,
+      "tag": "0007_spec_parser",
       "breakpoints": true
     }
   ]

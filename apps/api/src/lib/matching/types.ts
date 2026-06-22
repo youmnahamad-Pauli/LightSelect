@@ -83,8 +83,10 @@ export interface MatchEvaluation {
   /**
    * True when the requirement specifies a lumen output AND this candidate's
    * delivered lumen output is pending characterisation (bare component_build
-   * strip, no configured delivery combo). No headline fit score; surfaces in
-   * a distinct group below all assessed candidates.
+   * strip, no configured delivery combo). The candidate has full evidence for
+   * non-lumen attributes but NO headline fit score and is NOT ranked among
+   * assessed candidates. It surfaces in a distinct 'pending_characterisation'
+   * group below all assessed candidates.
    */
   pending_characterisation: boolean;
   pending_characterisation_reason: string | null;
