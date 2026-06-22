@@ -50,6 +50,7 @@ import type {
   MatchingRequirement,
   MatchDecisionSummary,
   MatchDecisionDetail,
+  SelectionState,
   ProjectDocument,
   ProjectDocumentType,
   SpecParseResult,
@@ -504,6 +505,34 @@ export const api = {
         method: 'POST',
         token,
       }),
+    resolveSelection: (token: string, requirementId: string) =>
+      request<SelectionState>(`/matching/requirements/${requirementId}/selection`, { token }),
+    resolveSelectionsBatch: (token: string, requirementIds: string[]) =>
+      request<{ resolutions: Record<string, SelectionState | null> }>(
+        '/matching/requirements/resolve-selections',
+        { method: 'POST', body: JSON.stringify({ requirement_ids: requirementIds }), token },
+      ),
+    setSelection: (
+      token: string,
+      requirementId: string,
+      canonicalProductId: string,
+      isOverride = false,
+    ) =>
+      request<{ requirement: MatchingRequirement; selection: SelectionState }>(
+        `/matching/requirements/${requirementId}/selection`,
+        {
+          method: 'PUT',
+          body: JSON.stringify({ canonical_product_id: canonicalProductId, is_override: isOverride }),
+          token,
+        },
+      ),
+    clearSelection: (token: string, requirementId: string) =>
+      request<{ requirement: MatchingRequirement; selection: SelectionState }>(
+        `/matching/requirements/${requirementId}/selection`,
+        { method: 'DELETE', token },
+      ),
+    aecomExportUrl: (requirementId: string) =>
+      `${BASE_URL}/matching/requirements/${requirementId}/export/aecom`,
   },
 };
 

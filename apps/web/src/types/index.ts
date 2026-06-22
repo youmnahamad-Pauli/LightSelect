@@ -802,7 +802,7 @@ export interface SpecParseResult {
   };
 }
 
-// ─── Matching Engine (Phase 3 / Phase 4) ──────────────────────────────────
+// ─── Matching Engine (Phase 3 / Phase 4 / Workflow Increment 2) ──────────────
 
 export interface MatchingRequirement {
   id: string;
@@ -816,11 +816,30 @@ export interface MatchingRequirement {
   flag_wind_load: boolean;
   flag_dark_sky: boolean;
   flag_bend_radius: boolean;
+  // Proposed-product selection (Increment 2)
+  selected_candidate_type: 'product' | 'combo' | null;
+  selected_candidate_id: string | null;
+  selection_is_override: boolean;
+  selected_at: string | null;
   created_at: string;
   updated_at: string;
 }
 
-export type MatchDecisionStatus = 'evaluated' | 'disqualified' | 'excluded';
+/** Resolved selection state for a single requirement. */
+export interface SelectionState {
+  mode: 'auto' | 'manual' | 'override' | 'needs_review' | 'no_candidates';
+  needs_review: boolean;
+  needs_review_reason: string | null;
+  selected_canonical_product_id: string | null;
+  resolved_canonical_product_id: string | null;
+  resolved_display_name: string | null;
+  resolved_fit_score: number | null;
+  resolved_rank: number | null;
+  resolved_status: string | null;
+  is_override: boolean;
+}
+
+export type MatchDecisionStatus = 'evaluated' | 'disqualified' | 'pending_characterisation' | 'excluded';
 
 export interface GateFailure {
   attr: string;

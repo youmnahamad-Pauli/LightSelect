@@ -1,15 +1,20 @@
 /**
- * Matching API — Phase 3.
+ * Matching API — Phase 3 + Workflow Increment 2.
  *
- * GET  /matching/requirements?org_id=<uuid>          — list requirements
- * POST /matching/requirements                         — create requirement
- * GET  /matching/requirements/:id/run                 — run (no persist)
- * POST /matching/requirements/:id/run                 — run + persist
- * GET  /matching/decisions?requirement_id=<uuid>      — list decisions for a requirement
- * GET  /matching/decisions/:id                        — decision + evidence detail
+ * GET    /matching/requirements?org_id=<uuid>            — list requirements
+ * POST   /matching/requirements                           — create requirement
+ * GET    /matching/requirements/:id/run                   — run (no persist)
+ * POST   /matching/requirements/:id/run                   — run + persist
+ * PUT    /matching/requirements/:id/selection             — set proposed product
+ * DELETE /matching/requirements/:id/selection             — clear selection
+ * GET    /matching/requirements/:id/selection             — resolve selection state
+ * POST   /matching/requirements/resolve-selections        — batch resolve selection state
+ * GET    /matching/requirements/:id/export/aecom          — download AECOM XLSX
+ * GET    /matching/decisions?requirement_id=<uuid>        — list decisions for a requirement
+ * GET    /matching/decisions/:id                          — decision + evidence detail
  */
 import { Router, type Request, type Response, type NextFunction } from 'express';
-import { eq, and } from 'drizzle-orm';
+import { eq, and, isNull } from 'drizzle-orm';
 import postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { db } from '../db/client';
@@ -19,9 +24,12 @@ import {
   type MatchingOperator,
 } from '../db/schema/matching';
 import { canonical_products, product_attribute_values } from '../db/schema/registry';
+import { delivery_combos } from '../db/schema/delivery-combos';
 import {
   loadRequirement, loadCandidates, runEvaluation, persistResults,
 } from '../lib/matching/engine';
+import { MatchDecisionExportSource } from '../lib/exports/spine';
+import { renderStatement } from '../lib/exports/templates/registry';
 import { success } from '../lib/response';
 
 export const matchingRouter = Router();
@@ -94,6 +102,351 @@ matchingRouter.post('/requirements', async (req: Request, res: Response, next: N
     }
 
     return success(res, newReq, 201);
+  } catch (err) { return next(err); }
+});
+
+// ── Selection helpers ─────────────────────────────────────────────────────────
+
+/**
+ * Given a canonical_product_id and the associated match decision status,
+ * determine the stable candidate reference to store.
+ *
+ * For configured products (delivery combos), look up the delivery_combo row
+ * and return its own ID as the stable reference.
+ * For plain canonical products, the canonical_product_id IS the stable id.
+ */
+async function resolveSelectionRef(
+  canonicalProductId: string,
+): Promise<{ type: 'product' | 'combo'; id: string }> {
+  const [combo] = await db
+    .select({ id: delivery_combos.id })
+    .from(delivery_combos)
+    .where(eq(delivery_combos.canonical_product_id, canonicalProductId))
+    .limit(1);
+  if (combo) return { type: 'combo', id: combo.id };
+  return { type: 'product', id: canonicalProductId };
+}
+
+/**
+ * Given stored selection fields, resolve back to the canonical_product_id
+ * that match_decisions uses (needed to look up the decision + for the spine).
+ */
+async function resolveToCanonicalProductId(
+  type: 'product' | 'combo',
+  id: string,
+): Promise<string | null> {
+  if (type === 'product') return id;
+  const [combo] = await db
+    .select({ canonical_product_id: delivery_combos.canonical_product_id })
+    .from(delivery_combos)
+    .where(eq(delivery_combos.id, id))
+    .limit(1);
+  return combo?.canonical_product_id ?? null;
+}
+
+/**
+ * Resolve the full selection state for a requirement.
+ * Returns the auto top-ranked candidate when no manual selection is stored.
+ */
+async function resolveSelectionState(requirementId: string) {
+  const [req] = await db
+    .select({
+      id: matching_requirements.id,
+      selected_candidate_type: matching_requirements.selected_candidate_type,
+      selected_candidate_id: matching_requirements.selected_candidate_id,
+      selection_is_override: matching_requirements.selection_is_override,
+      selected_at: matching_requirements.selected_at,
+    })
+    .from(matching_requirements)
+    .where(eq(matching_requirements.id, requirementId))
+    .limit(1);
+
+  if (!req) return null;
+
+  const decisions = await db
+    .select({
+      id: match_decisions.id,
+      canonical_product_id: match_decisions.canonical_product_id,
+      display_name: canonical_products.display_name,
+      status: match_decisions.status,
+      rank: match_decisions.rank,
+      fit_score: match_decisions.fit_score,
+    })
+    .from(match_decisions)
+    .leftJoin(canonical_products, eq(match_decisions.canonical_product_id, canonical_products.id))
+    .where(eq(match_decisions.requirement_id, requirementId));
+
+  // Auto: rank-1 assessed candidate
+  const autoDecision = decisions
+    .filter((d) => d.status === 'evaluated' && d.rank !== null)
+    .sort((a, b) => (a.rank ?? 999) - (b.rank ?? 999))[0] ?? null;
+
+  if (!req.selected_candidate_type || !req.selected_candidate_id) {
+    // No selection stored → auto mode
+    return {
+      mode: autoDecision ? 'auto' : 'no_candidates' as const,
+      needs_review: false,
+      needs_review_reason: null as string | null,
+      selected_canonical_product_id: null as string | null,
+      resolved_canonical_product_id: autoDecision?.canonical_product_id ?? null,
+      resolved_display_name: autoDecision?.display_name ?? null,
+      resolved_fit_score: autoDecision?.fit_score ?? null,
+      resolved_rank: autoDecision?.rank ?? null,
+      resolved_status: (autoDecision?.status ?? null) as string | null,
+      is_override: false,
+    };
+  }
+
+  // Manual selection stored — resolve back to canonical_product_id
+  const selectedCanonicalId = await resolveToCanonicalProductId(
+    req.selected_candidate_type,
+    req.selected_candidate_id,
+  );
+
+  if (!selectedCanonicalId) {
+    return {
+      mode: 'needs_review' as const,
+      needs_review: true,
+      needs_review_reason: 'Selected candidate no longer found in catalogue',
+      selected_canonical_product_id: null,
+      resolved_canonical_product_id: autoDecision?.canonical_product_id ?? null,
+      resolved_display_name: autoDecision?.display_name ?? null,
+      resolved_fit_score: autoDecision?.fit_score ?? null,
+      resolved_rank: autoDecision?.rank ?? null,
+      resolved_status: (autoDecision?.status ?? null) as string | null,
+      is_override: req.selection_is_override,
+    };
+  }
+
+  const selectedDecision = decisions.find(
+    (d) => d.canonical_product_id === selectedCanonicalId,
+  ) ?? null;
+
+  const needsReview =
+    !selectedDecision ||
+    (selectedDecision.status !== 'evaluated' && !req.selection_is_override);
+
+  const needsReviewReason = needsReview
+    ? (!selectedDecision
+        ? 'Selected candidate is no longer in match decisions — re-run matching'
+        : `Selected candidate is now ${selectedDecision.status} — review required`)
+    : null;
+
+  return {
+    mode: (req.selection_is_override ? 'override' : 'manual') as 'manual' | 'override',
+    needs_review: needsReview,
+    needs_review_reason: needsReviewReason,
+    selected_canonical_product_id: selectedCanonicalId,
+    resolved_canonical_product_id: selectedCanonicalId,
+    resolved_display_name: selectedDecision?.display_name ?? null,
+    resolved_fit_score: selectedDecision?.fit_score ?? null,
+    resolved_rank: selectedDecision?.rank ?? null,
+    resolved_status: (selectedDecision?.status ?? null) as string | null,
+    is_override: req.selection_is_override,
+  };
+}
+
+// ── PUT /matching/requirements/:id/selection — set proposed product ───────────
+
+matchingRouter.put('/requirements/:id/selection', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const requirementId = req.params.id;
+    const { canonical_product_id, is_override = false } = req.body as {
+      canonical_product_id: string;
+      is_override?: boolean;
+    };
+
+    if (!canonical_product_id) {
+      return res.status(400).json({ error: 'canonical_product_id required' });
+    }
+
+    // Verify the requirement exists
+    const [reqRow] = await db
+      .select({ id: matching_requirements.id })
+      .from(matching_requirements)
+      .where(eq(matching_requirements.id, requirementId))
+      .limit(1);
+    if (!reqRow) return res.status(404).json({ error: 'Requirement not found' });
+
+    // Verify a match decision exists for this candidate
+    const [decision] = await db
+      .select({ id: match_decisions.id, status: match_decisions.status })
+      .from(match_decisions)
+      .where(and(
+        eq(match_decisions.requirement_id, requirementId),
+        eq(match_decisions.canonical_product_id, canonical_product_id),
+      ))
+      .limit(1);
+
+    if (!decision) {
+      return res.status(404).json({
+        error: 'No match decision found for this candidate. Run matching first.',
+      });
+    }
+
+    // Excluded candidates are never selectable
+    if (decision.status === 'excluded') {
+      return res.status(422).json({
+        error: 'Excluded candidates (luminaire type mismatch) cannot be selected as proposed.',
+      });
+    }
+
+    // Disqualified/pending require explicit override confirmation
+    if (
+      (decision.status === 'disqualified' || decision.status === 'pending_characterisation') &&
+      !is_override
+    ) {
+      return res.status(409).json({
+        error: `Candidate status is "${decision.status}". Set is_override=true to confirm selection with override warning.`,
+        code: 'REQUIRES_OVERRIDE',
+        candidate_status: decision.status,
+      });
+    }
+
+    const selectionRef = await resolveSelectionRef(canonical_product_id);
+
+    const [updated] = await db
+      .update(matching_requirements)
+      .set({
+        selected_candidate_type: selectionRef.type,
+        selected_candidate_id:   selectionRef.id,
+        selection_is_override:   is_override,
+        selected_at:             new Date(),
+        updated_at:              new Date(),
+      })
+      .where(eq(matching_requirements.id, requirementId))
+      .returning();
+
+    const state = await resolveSelectionState(requirementId);
+    return success(res, { requirement: updated, selection: state });
+  } catch (err) { return next(err); }
+});
+
+// ── DELETE /matching/requirements/:id/selection — clear selection ─────────────
+
+matchingRouter.delete('/requirements/:id/selection', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const requirementId = req.params.id;
+
+    const [reqRow] = await db
+      .select({ id: matching_requirements.id })
+      .from(matching_requirements)
+      .where(eq(matching_requirements.id, requirementId))
+      .limit(1);
+    if (!reqRow) return res.status(404).json({ error: 'Requirement not found' });
+
+    const [updated] = await db
+      .update(matching_requirements)
+      .set({
+        selected_candidate_type: null,
+        selected_candidate_id:   null,
+        selection_is_override:   false,
+        selected_at:             null,
+        updated_at:              new Date(),
+      })
+      .where(eq(matching_requirements.id, requirementId))
+      .returning();
+
+    const state = await resolveSelectionState(requirementId);
+    return success(res, { requirement: updated, selection: state });
+  } catch (err) { return next(err); }
+});
+
+// ── GET /matching/requirements/:id/selection — resolve selection state ────────
+
+matchingRouter.get('/requirements/:id/selection', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const state = await resolveSelectionState(req.params.id);
+    if (!state) return res.status(404).json({ error: 'Requirement not found' });
+    return success(res, state);
+  } catch (err) { return next(err); }
+});
+
+// ── POST /matching/requirements/resolve-selections — batch resolve ────────────
+
+matchingRouter.post('/requirements/resolve-selections', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { requirement_ids } = req.body as { requirement_ids: string[] };
+    if (!Array.isArray(requirement_ids) || requirement_ids.length === 0) {
+      return res.status(400).json({ error: 'requirement_ids array required' });
+    }
+    const resolutions: Record<string, Awaited<ReturnType<typeof resolveSelectionState>>> = {};
+    await Promise.all(
+      requirement_ids.map(async (id) => {
+        resolutions[id] = await resolveSelectionState(id);
+      }),
+    );
+    return success(res, { resolutions });
+  } catch (err) { return next(err); }
+});
+
+// ── GET /matching/requirements/:id/export/aecom — download AECOM XLSX ────────
+
+matchingRouter.get('/requirements/:id/export/aecom', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const requirementId = req.params.id;
+
+    const [reqRow] = await db
+      .select({
+        id:           matching_requirements.id,
+        item_code:    matching_requirements.item_code,
+        name:         matching_requirements.name,
+        description:  matching_requirements.description,
+      })
+      .from(matching_requirements)
+      .where(eq(matching_requirements.id, requirementId))
+      .limit(1);
+    if (!reqRow) return res.status(404).json({ error: 'Requirement not found' });
+
+    // Resolve the proposed candidate (selected or auto)
+    const selectionState = await resolveSelectionState(requirementId);
+    const resolvedCanonicalProductId = selectionState?.resolved_canonical_product_id ?? null;
+
+    if (!resolvedCanonicalProductId) {
+      return res.status(422).json({
+        error: 'No assessable candidate available for this requirement. Run matching first.',
+        code: 'NO_CANDIDATE',
+      });
+    }
+
+    // Build spine using a fresh postgres connection (same pattern as the run endpoint)
+    const sqlClient = postgres(process.env.DATABASE_URL!, { max: 1 });
+    const pgDb = drizzle(sqlClient);
+
+    const today = new Date().toLocaleDateString('en-GB', {
+      day: '2-digit', month: 'short', year: 'numeric',
+    });
+
+    try {
+      const statement = await MatchDecisionExportSource.resolve(
+        pgDb,
+        requirementId,
+        resolvedCanonicalProductId,
+        {
+          date:     today,
+          revision: 'Rev A',
+          item_code: reqRow.item_code ?? undefined,
+          item_type: reqRow.name,
+        },
+      );
+
+      const buffer = await renderStatement(statement, 'aecom');
+
+      const isOverride = selectionState?.is_override ?? false;
+      const mode = selectionState?.mode ?? 'auto';
+
+      const dateStr = new Date().toISOString().slice(0, 10);
+      const itemSlug = (reqRow.item_code ?? requirementId.slice(0, 8)).toLowerCase().replace(/[^a-z0-9]+/g, '-');
+      const filename = `aecom-${itemSlug}-${dateStr}.xlsx`;
+
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+      res.setHeader('X-Selection-Mode', mode);
+      res.setHeader('X-Selection-Override', String(isOverride));
+      return res.send(buffer);
+    } finally {
+      await sqlClient.end();
+    }
   } catch (err) { return next(err); }
 });
 

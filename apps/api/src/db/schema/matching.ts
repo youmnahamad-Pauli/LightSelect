@@ -100,6 +100,14 @@ export const matching_requirements = pgTable('matching_requirements', {
   flag_wind_load: boolean('flag_wind_load').notNull().default(false),
   flag_dark_sky: boolean('flag_dark_sky').notNull().default(false),
   flag_bend_radius: boolean('flag_bend_radius').notNull().default(false),
+  // ── Proposed-product selection (Workflow Increment 2) ──────────────────────
+  /** 'product' = canonical_products row; 'combo' = delivery_combos row */
+  selected_candidate_type: text('selected_candidate_type').$type<'product' | 'combo'>(),
+  /** UUID of canonical_products.id (type=product) or delivery_combos.id (type=combo) */
+  selected_candidate_id: uuid('selected_candidate_id'),
+  /** true when the selected candidate was disqualified/pending at selection time */
+  selection_is_override: boolean('selection_is_override').notNull().default(false),
+  selected_at: timestamp('selected_at', { withTimezone: true }),
   created_at: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updated_at: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 }, (table) => ({
