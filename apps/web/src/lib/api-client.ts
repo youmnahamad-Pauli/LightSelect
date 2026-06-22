@@ -58,6 +58,8 @@ import type {
   SubmittalTemplateWithItems,
   SubmittalCompletenessResult,
   SubmittalGateCheckResult,
+  PackageManifest,
+  PackageGenerateResult,
 } from '@/types';
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
@@ -547,6 +549,21 @@ export const api = {
       request<ProjectDocument>(`/project-documents/${docId}/item-link`, {
         method: 'PATCH',
         body: JSON.stringify({ item_id }),
+        token,
+      }),
+  },
+
+  submittalPackage: {
+    manifest: (token: string, projectId: string) =>
+      request<PackageManifest>(`/projects/${projectId}/submittal-package/manifest`, { token }),
+    generate: (
+      token: string,
+      projectId: string,
+      opts?: { is_override?: boolean; override_reason?: string },
+    ) =>
+      request<PackageGenerateResult>(`/projects/${projectId}/submittal-package/generate`, {
+        method: 'POST',
+        body: JSON.stringify(opts ?? {}),
         token,
       }),
   },

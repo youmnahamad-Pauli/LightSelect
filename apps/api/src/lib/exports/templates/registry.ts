@@ -11,6 +11,7 @@
 import type { ExportTemplate } from './base';
 import type { ComplianceStatement, RenderOptions } from '../types';
 import { AecomXlsxTemplate } from './aecom-xlsx';
+import { AecomPdfTemplate } from './aecom-pdf';
 
 // ─── Registry ─────────────────────────────────────────────────────────────────
 
@@ -23,6 +24,7 @@ function registerTemplate(template: ExportTemplate): void {
 // ─── Built-in registrations ───────────────────────────────────────────────────
 
 registerTemplate(new AecomXlsxTemplate());
+registerTemplate(new AecomPdfTemplate());
 
 // ─── Public API ───────────────────────────────────────────────────────────────
 
