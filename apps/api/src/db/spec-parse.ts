@@ -151,7 +151,7 @@ function generateReviewMarkdown(result: SpecParseResult, matchingResults: MatchR
   lines.push('1. **Luminaire type classification**: Items with confidence < 0.8 must have their luminaire_type confirmed before matching is meaningful — the type scoping filter excludes wrong-type candidates entirely.');
   lines.push('2. **Unknown attribute keys**: Keys returned by the LLM that are not in ATTR_CONFIG are discarded. Review whether they should be added to the locked config or treated as informational.');
   lines.push('3. **Lumen basis**: All lumen targets are written with `notes: "lumen basis: delivered"`. Confirm the spec intends delivered output before running matching.');
-  lines.push('4. **Dimming as gate**: The current config does NOT add dimming as a gate requirement (it was captured as informational `control_type`). If dimming protocol is a hard gate for this project, add it manually to the requirement attrs.');
+  lines.push('4. **Dimming gate**: When the spec explicitly requires a dimming protocol (e.g. "DALI-dimmable"), the parser routes it to the `dimming` hard gate. Products without a `dimming` attribute receive `gate_unverifiable` (flagged, not disqualified). Purely informational dimming notes go to `control_type` (not matched).');
   lines.push('');
 
   return lines.join('\n');
