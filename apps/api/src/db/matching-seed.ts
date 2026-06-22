@@ -1,11 +1,13 @@
 /**
- * STEP 3 seed script — Phase 3 matching test (tuning pass).
+ * STEP 3 seed script — Phase 3 matching test (diffuser/configured-product pass).
  *
- * Changes vs Phase 3 original:
- *   1. colour_family attribute set on all ILTI strips; new colour_family_gate hard gate added.
- *   2. CCT switched from contains_value → match_target_cct (±100K absolute tolerance).
- *   3. Signify BRP 331 classified as 'downlight' so type-scoping excludes it.
- *   4. Requirement is always deleted and recreated to pick up gate changes.
+ * Changes vs tuning pass:
+ *   1. Explicit archetype='component_build' attribute on all WKL strips.
+ *   2. Configured product: 1-WKL-6023 + EXAMPLE Opal profile (transmission=0.80, estimated).
+ *      Combo's canonical product carries delivered lm/m = 1480, is_configured_product='true'.
+ *   3. Requirement carries item_code='FLEX-TAPE'.
+ *   4. Bare strip → delivered_pending (lumen not assessable).
+ *      Combo → deviation −26% (delivered 1480 vs required 2000 lm/m).
  *
  * Usage:
  *   pnpm --filter api tsx src/db/matching-seed.ts
@@ -15,9 +17,10 @@
 import 'dotenv/config';
 import postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
-import { like, eq } from 'drizzle-orm';
+import { like, eq, and } from 'drizzle-orm';
 import { canonical_products, product_attribute_values } from './schema/registry';
 import { matching_requirements, matching_requirement_attrs } from './schema/matching';
+import { delivery_combos } from './schema/delivery-combos';
 import { loadRequirement, loadCandidates, runEvaluation, persistResults } from '../lib/matching/engine';
 import { MATCHING_CONFIG as C } from '../lib/matching/config';
 
@@ -34,6 +37,23 @@ function parseArgs() {
   return { orgId };
 }
 
+async function upsertAttr(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  db: ReturnType<typeof drizzle<any>>,
+  productId: string,
+  key: string,
+  value: string,
+  state: 'confirmed' | 'extracted' = 'confirmed',
+): Promise<void> {
+  await db
+    .insert(product_attribute_values)
+    .values({ canonical_product_id: productId, attribute_key: key, attribute_value: value, value_state: state })
+    .onConflictDoUpdate({
+      target: [product_attribute_values.canonical_product_id, product_attribute_values.attribute_key],
+      set: { attribute_value: value, value_state: state, updated_at: new Date() },
+    });
+}
+
 // ── Main ──────────────────────────────────────────────────────────────────────
 
 async function main() {
@@ -41,7 +61,7 @@ async function main() {
   const sql = postgres(process.env.DATABASE_URL!, { max: 1 });
   const db  = drizzle(sql);
 
-  // ── 1. Classify ILTI WKL strips ──────────────────────────────────────────
+  // ── 1. Classify ILTI WKL strips + set archetype ──────────────────────────
   console.log('\n[matching-seed] Step 1: classifying ILTI WKL strips…');
 
   const iltiStrips = await db
@@ -56,13 +76,11 @@ async function main() {
   console.log(`  Found ${iltiStrips.length} WKL strip products.`);
 
   for (const p of iltiStrips) {
-    // Set luminaire_type = flexible_tape (unchanged from Phase 3)
     await db
       .update(canonical_products)
       .set({ luminaire_type: 'flexible_tape', updated_at: new Date() })
       .where(eq(canonical_products.id, p.id));
 
-    // Get all attributes for this product to find family_name
     const allAttrs = await db
       .select({ k: product_attribute_values.attribute_key, v: product_attribute_values.attribute_value })
       .from(product_attribute_values)
@@ -76,53 +94,15 @@ async function main() {
     } else if (familyName === 'N22') {
       colourFamily = 'rgbw';
     } else {
-      // N10, N17, N19, N24, N24HF, N25 → all white
       colourFamily = 'white';
     }
 
-    // Upsert colour_family in product_attribute_values
-    await db
-      .insert(product_attribute_values)
-      .values({
-        canonical_product_id: p.id,
-        attribute_key:        'colour_family',
-        attribute_value:      colourFamily,
-        value_state:          'confirmed',
-      })
-      .onConflictDoUpdate({
-        target: [
-          product_attribute_values.canonical_product_id,
-          product_attribute_values.attribute_key,
-        ],
-        set: {
-          attribute_value: colourFamily,
-          value_state:     'confirmed',
-          updated_at:      new Date(),
-        },
-      });
+    await upsertAttr(db, p.id, 'colour_family', colourFamily);
+    await upsertAttr(db, p.id, 'dimmable', 'true');
+    // Explicitly set archetype — no model-code prefix heuristics in exports
+    await upsertAttr(db, p.id, 'archetype', 'component_build');
 
-    console.log(`  ${p.canonical_model_code} (${familyName || 'unknown'}) → colour_family=${colourFamily}`);
-
-    // Set dimmable=true — all WKL constant-voltage tapes support 0-10V / PWM dimming
-    await db
-      .insert(product_attribute_values)
-      .values({
-        canonical_product_id: p.id,
-        attribute_key:        'dimmable',
-        attribute_value:      'true',
-        value_state:          'confirmed',
-      })
-      .onConflictDoUpdate({
-        target: [
-          product_attribute_values.canonical_product_id,
-          product_attribute_values.attribute_key,
-        ],
-        set: {
-          attribute_value: 'true',
-          value_state:     'confirmed',
-          updated_at:      new Date(),
-        },
-      });
+    console.log(`  ${p.canonical_model_code} (${familyName || 'unknown'}) → colour_family=${colourFamily}, archetype=component_build`);
   }
 
   // ── 2. Classify profile products ─────────────────────────────────────────
@@ -139,7 +119,119 @@ async function main() {
   }
   console.log(`  ${bpProducts.length} BP products classified as 'profile'.`);
 
-  // ── 3. Classify Signify BRP 331 as downlight (Change 4 — data hygiene) ───
+  // ── 2b. Create configured product: 1-WKL-6023 + EXAMPLE Opal Profile ────
+  console.log('\n[matching-seed] Step 2b: creating 1-WKL-6023 + EXAMPLE Opal configured product…');
+
+  // Find the 1-WKL-6023 strip (search by model code pattern)
+  const wkl6023Rows = await db
+    .select({ id: canonical_products.id, display_name: canonical_products.display_name,
+              canonical_model_code: canonical_products.canonical_model_code })
+    .from(canonical_products)
+    .where(like(canonical_products.canonical_model_code, '%wkl%6023%'));
+
+  if (wkl6023Rows.length === 0) {
+    console.warn('  ⚠ 1-WKL-6023 not found — skipping configured product creation.');
+  } else {
+    const strip = wkl6023Rows[0];
+    console.log(`  Strip: ${strip.canonical_model_code} (${strip.id})`);
+
+    // Get all strip attributes so we can copy them to the combo
+    const stripAttrs = await db
+      .select()
+      .from(product_attribute_values)
+      .where(eq(product_attribute_values.canonical_product_id, strip.id));
+
+    // Check if a configured product for this strip already exists
+    const existingCombo = await db
+      .select({ id: delivery_combos.id, canonical_product_id: delivery_combos.canonical_product_id })
+      .from(delivery_combos)
+      .where(eq(delivery_combos.strip_canonical_product_id, strip.id))
+      .limit(1);
+
+    let comboCanonicalId: string;
+
+    if (existingCombo.length > 0 && existingCombo[0].canonical_product_id) {
+      comboCanonicalId = existingCombo[0].canonical_product_id;
+      console.log(`  Using existing configured product (canonical_id=${comboCanonicalId})`);
+    } else {
+      // Create new canonical_products row for the combo.
+      // Check by dedup_key first so re-runs are idempotent.
+      const COMBO_DEDUP_KEY = 'ilti luce::combo-1wkl6023-example-opal';
+      const [existingComboCanonical] = await db
+        .select({ id: canonical_products.id })
+        .from(canonical_products)
+        .where(and(eq(canonical_products.org_id, orgId), eq(canonical_products.dedup_key, COMBO_DEDUP_KEY)))
+        .limit(1);
+
+      let comboCanonical: { id: string };
+      if (existingComboCanonical) {
+        comboCanonical = existingComboCanonical;
+        console.log(`  Existing combo canonical product found: ${comboCanonical.id}`);
+      } else {
+        const [inserted] = await db
+          .insert(canonical_products)
+          .values({
+            org_id:                 orgId,
+            display_name:           'EXAMPLE Opal Profile + ILTI LUCE — 1-WKL-6023-0-00',
+            canonical_manufacturer: 'ilti luce',
+            canonical_model_code:   'combo-1wkl6023-example-opal',
+            dedup_key:              COMBO_DEDUP_KEY,
+            luminaire_type:         'flexible_tape',
+          })
+          .returning({ id: canonical_products.id });
+        comboCanonical = inserted;
+      }
+
+      comboCanonicalId = comboCanonical.id;
+
+      // Copy strip attributes to combo, then override/add combo-specific ones
+      for (const attr of stripAttrs) {
+        if (!attr.attribute_value) continue;
+        await upsertAttr(db, comboCanonicalId, attr.attribute_key, attr.attribute_value,
+          attr.value_state === 'confirmed' ? 'confirmed' : 'extracted');
+      }
+    }
+
+    // Override/add combo-specific attributes
+    const DIFFUSER_TRANSMISSION = 0.80;
+    const sourceAttr = stripAttrs.find((a) => a.attribute_key === 'lumens_per_metre');
+    const sourceLm   = sourceAttr?.attribute_value ? parseFloat(sourceAttr.attribute_value) : null;
+    const deliveredLm = sourceLm !== null ? Math.round(sourceLm * DIFFUSER_TRANSMISSION) : null;
+
+    // delivered lm/m (computed = 1850 × 0.80 = 1480)
+    if (deliveredLm !== null) {
+      await upsertAttr(db, comboCanonicalId, 'lumens_per_metre', String(deliveredLm), 'extracted');
+      console.log(`  Delivered lm/m = ${sourceLm} × ${DIFFUSER_TRANSMISSION} = ${deliveredLm} lm/m`);
+    }
+
+    await upsertAttr(db, comboCanonicalId, 'archetype', 'component_build');
+    await upsertAttr(db, comboCanonicalId, 'is_configured_product', 'true');
+    await upsertAttr(db, comboCanonicalId, 'diffuser_transmission', String(DIFFUSER_TRANSMISSION));
+    await upsertAttr(db, comboCanonicalId, 'transmission_provenance', 'estimated');
+
+    // Create or update the delivery_combos row
+    if (existingCombo.length === 0) {
+      await db.insert(delivery_combos).values({
+        org_id:                        orgId,
+        canonical_product_id:          comboCanonicalId,
+        strip_canonical_product_id:    strip.id,
+        display_name:                  'EXAMPLE Opal Profile + ILTI LUCE — 1-WKL-6023-0-00',
+        luminaire_type:                'flexible_tape',
+        profile_name:                  'EXAMPLE Opal Profile',
+        profile_manufacturer:          'EXAMPLE',
+        profile_model_code:            'OPAL-EXAMPLE',
+        diffuser_type:                 'opal',
+        diffuser_transmission:         DIFFUSER_TRANSMISSION,
+        transmission_provenance:       'estimated',
+        notes:                         'PLACEHOLDER — diffuser transmission estimated at 80%. Verify from manufacturer characterisation before issue.',
+      });
+      console.log('  Created delivery_combos row (PLACEHOLDER — estimated transmission).');
+    } else {
+      console.log('  Configured product row already exists — updated attributes.');
+    }
+  }
+
+  // ── 3. Classify Signify BRP 331 as downlight ──────────────────────────────
   console.log('\n[matching-seed] Step 3: classifying Signify BRP 331 as downlight…');
   const [brp331] = await db
     .select({ id: canonical_products.id })
@@ -157,10 +249,9 @@ async function main() {
     console.log('  Signify BRP 331 not found (may have been removed).');
   }
 
-  // ── 4. Recreate the requirement with tuned gates ──────────────────────────
-  console.log('\n[matching-seed] Step 4: recreating flexible-tape requirement (tuning pass)…');
+  // ── 4. Recreate the requirement ───────────────────────────────────────────
+  console.log('\n[matching-seed] Step 4: recreating flexible-tape requirement (diffuser pass)…');
 
-  // Delete any existing requirement for this org (cascade deletes attrs + decisions + evidence)
   const existingReqs = await db
     .select({ id: matching_requirements.id })
     .from(matching_requirements)
@@ -180,7 +271,8 @@ async function main() {
       description:
         'Surface-mounted flexible LED tape for soft cove/perimeter lighting. ' +
         'Indoor (IP≥20). White output only (colour channels disqualified). ' +
-        '3000K ±100K absolute. CRI≥90. ~2000 lm/m.',
+        '3000K ±100K absolute. CRI≥90. ~2000 lm/m delivered.',
+      item_code:        'FLEX-TAPE',
       flag_wind_load:   false,
       flag_dark_sky:    false,
       flag_bend_radius: false,
@@ -213,7 +305,7 @@ async function main() {
       operator:       'colour_family_gate',
       target_value:   'white',
       gate_type:      'hard',
-      notes:          'White output required. RGB/RGBW/RGBIC products disqualified — "can produce white" argument rejected per spec.',
+      notes:          'White output required. RGB/RGBW/RGBIC products disqualified.',
     },
     // ── Scored attributes ─────────────────────────────────────────────────────
     {
@@ -223,7 +315,7 @@ async function main() {
       target_value:   '3000',
       target_unit:    'K',
       weight:         C.WEIGHT_HIGH,
-      notes:          '3000K warm-white required. Closest CCT in product list; ±100K absolute → comment; exact match → comply.',
+      notes:          '3000K warm-white required. Closest CCT ±100K → comment; exact → comply.',
     },
     {
       requirement_id: requirementId,
@@ -231,7 +323,7 @@ async function main() {
       operator:       'gte',
       target_value:   '90',
       weight:         C.WEIGHT_HIGH,
-      notes:          'CRI≥90 required for accurate colour rendering.',
+      notes:          'CRI≥90 required.',
     },
     {
       requirement_id: requirementId,
@@ -240,7 +332,7 @@ async function main() {
       target_value:   '2000',
       target_unit:    'lm/m',
       weight:         C.WEIGHT_HIGH,
-      notes:          'Asymmetric: ±2% → comply; −2%–−10% → comment; undershoot >10% → deviation. Overshoot: watts must be within spec; dimmable → +20% band, else +10% band.',
+      notes:          'Delivered basis. Bare strip → delivered_pending. Combo → deviation at 1480 lm/m (−26%).',
     },
     {
       requirement_id: requirementId,
@@ -257,11 +349,11 @@ async function main() {
       operator:       'gte',
       target_value:   '120',
       weight:         C.WEIGHT_MED,
-      notes:          '≥120 LED/m for dot-free appearance from normal viewing distances.',
+      notes:          '≥120 LED/m for dot-free appearance.',
     },
   ]);
 
-  console.log(`  Requirement created: ${requirementId}`);
+  console.log(`  Requirement created: ${requirementId} (item_code=FLEX-TAPE)`);
 
   // ── 5. Load + run evaluation ──────────────────────────────────────────────
   console.log('\n[matching-seed] Step 5: loading candidates and running evaluation…');
@@ -275,7 +367,7 @@ async function main() {
 
   // ── 6. Print results ──────────────────────────────────────────────────────
   console.log('\n═══════════════════════════════════════════════════════════════════');
-  console.log(`  MATCH RESULTS (TUNING PASS) — ${req.name}`);
+  console.log(`  MATCH RESULTS (DIFFUSER PASS) — ${req.name}`);
   console.log('═══════════════════════════════════════════════════════════════════');
 
   const excluded     = evaluations.filter((e) => e.excluded);
@@ -297,8 +389,41 @@ async function main() {
       const band = (e.confidence_band ?? 'N/A').padEnd(4);
       const cap  = e.deviations_high_weight > 0 ? '⚠ ' : '  ';
       const dev  = `${e.deviations_high_weight}/${e.deviations_medium_weight}/${e.deviations_low_weight}`;
-      console.log(`  ${String(rank).padStart(2)}    ${name}  ${cap}${fit.padStart(6)}  ${conf}  ${band}  ${dev.padEnd(9)}   ${e.comments_count}`);
+
+      // Check for delivered_pending lumen verdict
+      const lumenEvidence = e.evidence.find(
+        (ev) => ev.attribute_key === 'lumens_per_metre' || ev.attribute_key === 'lumens',
+      );
+      const lumenTag = lumenEvidence?.verdict === 'delivered_pending' ? ' [DELIVERED PENDING]' : '';
+
+      console.log(`  ${String(rank).padStart(2)}    ${name}  ${cap}${fit.padStart(6)}  ${conf}  ${band}  ${dev.padEnd(9)}   ${e.comments_count}${lumenTag}`);
     }
+  }
+
+  // ── Side-by-side: bare strip vs configured combo ─────────────────────────
+  const wkl6023Eval  = scored.find((e) => e.candidate.display_name.includes('1-WKL-6023') &&
+    !e.candidate.is_configured_product);
+  const comboEval    = scored.find((e) => e.candidate.is_configured_product &&
+    e.candidate.display_name.includes('6023'));
+
+  if (wkl6023Eval || comboEval) {
+    console.log('\n  ── SIDE-BY-SIDE: bare strip vs configured combo ─────────────────────');
+    console.log('  Product                                   Lumen Verdict      Evidence');
+    console.log('  ─────────────────────────────────────────────────────────────────────');
+
+    const printRow = (label: string, e: typeof scored[0] | undefined) => {
+      if (!e) { console.log(`  ${label.padEnd(40)}  (not in scored pool)`); return; }
+      const lumenEv = e.evidence.find((ev) =>
+        ev.attribute_key === 'lumens_per_metre' || ev.attribute_key === 'lumens',
+      );
+      const verdict = lumenEv?.verdict ?? 'n/a';
+      const note    = lumenEv?.evidence_note ?? '';
+      console.log(`  ${label.padEnd(40)}  ${verdict.toUpperCase().padEnd(20)} ${note.slice(0, 60)}`);
+    };
+
+    printRow('1-WKL-6023 (bare strip)', wkl6023Eval);
+    printRow('+ EXAMPLE Opal (combo, delivered=1480)', comboEval);
+    console.log('  ─────────────────────────────────────────────────────────────────────');
   }
 
   console.log(`\n  DISQUALIFIED — HARD GATE FAILED (${disqualified.length}):`);
@@ -322,7 +447,8 @@ async function main() {
     for (const e of top3) {
       const fitStr  = e.fit_score?.toFixed(1);
       const confStr = e.confidence_score?.toFixed(2);
-      console.log(`  ┌─ ${e.candidate.display_name} (fit=${fitStr}%, conf=${confStr} ${e.confidence_band})`);
+      const configTag = e.candidate.is_configured_product ? ' [CONFIGURED PRODUCT]' : '';
+      console.log(`  ┌─ ${e.candidate.display_name}${configTag} (fit=${fitStr}%, conf=${confStr} ${e.confidence_band})`);
       for (const v of e.evidence) {
         const tag     = v.is_gate ? `[${v.gate_type?.toUpperCase() ?? 'GATE'}]` : `[scored w=${v.weight}]`;
         const verdict = v.verdict.toUpperCase().padEnd(18);

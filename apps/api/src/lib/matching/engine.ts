@@ -15,7 +15,7 @@
  * Results can be persisted to match_decisions + match_evidence via persistResults().
  */
 import { eq } from 'drizzle-orm';
-import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
+import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import {
   matching_requirements, matching_requirement_attrs,
   match_decisions, match_evidence,
@@ -34,7 +34,7 @@ import { calculateConfidence } from './confidence';
 
 /** Load a requirement (with attrs) from the DB. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export async function loadRequirement(db: NodePgDatabase<any>, requirementId: string): Promise<LoadedRequirement | null> {
+export async function loadRequirement(db: PostgresJsDatabase<any>, requirementId: string): Promise<LoadedRequirement | null> {
   const [req] = await db
     .select()
     .from(matching_requirements)
@@ -52,7 +52,7 @@ export async function loadRequirement(db: NodePgDatabase<any>, requirementId: st
 
 /** Load all candidate products for an org (with their attribute values). */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export async function loadCandidates(db: NodePgDatabase<any>, orgId: string): Promise<MatchCandidate[]> {
+export async function loadCandidates(db: PostgresJsDatabase<any>, orgId: string): Promise<MatchCandidate[]> {
   const products = await db
     .select()
     .from(canonical_products)
@@ -77,12 +77,15 @@ export async function loadCandidates(db: NodePgDatabase<any>, orgId: string): Pr
       });
     }
 
+    const isConfigured = attrMap.get('is_configured_product')?.attribute_value === 'true';
+
     candidates.push({
       canonical_product_id: p.id,
       display_name: p.display_name,
       luminaire_type: p.luminaire_type,
       approvals_held: p.approvals_held ?? null,
       attributes: attrMap,
+      is_configured_product: isConfigured,
     });
   }
 
@@ -212,7 +215,7 @@ export function runEvaluation(
 /** Persist evaluated results to match_decisions + match_evidence tables. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function persistResults(
-  db: NodePgDatabase<any>,
+  db: PostgresJsDatabase<any>,
   evaluations: (MatchEvaluation & { rank?: number | null })[],
 ): Promise<void> {
   for (const ev of evaluations) {

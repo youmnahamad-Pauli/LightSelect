@@ -50,6 +50,12 @@ export interface MatchCandidate {
   luminaire_type: string | null;
   approvals_held: string[] | null;
   attributes: Map<string, ResolvedAttributeValue>;
+  /**
+   * True when this candidate is a configured product (strip + profile/diffuser combo).
+   * Bare component_build strips have is_configured_product=false and cannot be assessed
+   * for delivered lumen output → scored lumen verdict becomes 'delivered_pending'.
+   */
+  is_configured_product: boolean;
 }
 
 /** Result of evaluating one requirement constraint against one candidate. */

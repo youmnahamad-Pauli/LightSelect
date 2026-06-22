@@ -36,6 +36,13 @@ export const verdictTypes = [
   'gate_pass',
   'gate_fail',
   'gate_unverifiable',
+  /**
+   * bare component_build strip where delivered lumen output cannot be
+   * assessed (diffuser transmission not characterised). Excluded from fit
+   * score; included in confidence at score=0.0 to lower confidence band.
+   * Flagged prominently in exports as "delivered pending — not assessable".
+   */
+  'delivered_pending',
 ] as const;
 export type VerdictType = (typeof verdictTypes)[number];
 
@@ -64,6 +71,11 @@ export const matching_requirements = pgTable('matching_requirements', {
   description: text('description'),
   /** Certifications or scheme approvals that candidate products must hold or obtain. */
   approvals_required: text('approvals_required').array(),
+  /**
+   * Optional item/line code used as the XLSX sheet name in consultant exports.
+   * E.g. "FLEX-TAPE", "DOWNLIGHT-01". Null → export uses a derived fallback.
+   */
+  item_code: text('item_code'),
   // Conditional gate activation flags (only evaluate those gates when true)
   flag_wind_load: boolean('flag_wind_load').notNull().default(false),
   flag_dark_sky: boolean('flag_dark_sky').notNull().default(false),
