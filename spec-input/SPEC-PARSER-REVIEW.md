@@ -1,11 +1,11 @@
 # Spec Parser Review — LightSelect-Test-Schedule.md
 
-**Parsed at:** 2026-06-22 06:51
+**Parsed at:** 2026-06-22 07:59
 **Source file:** `C:\Users\julia\lightselect\spec-input\LightSelect-Test-Schedule.md`
 **Org ID:** `e15f7fa1-1ca5-4aba-8d07-f6cc88d00a3e`
 **Items detected:** 4
 **Items written:** 4
-**LLM:** claude-sonnet-4-6 · in=2962 out=1916 (21183ms)
+**LLM:** claude-sonnet-4-6 · in=3057 out=1917 (18605ms)
 
 > All extracted values have provenance = **extracted** and require human review.
 > Luminaire type classifications with confidence < 0.8 are flagged for review.
@@ -17,10 +17,10 @@
 
 | Field | Value |
 |-------|-------|
-| Requirement ID | `17e18a07-564d-4dc7-ba68-06ac50edcf9d` |
+| Requirement ID | `9e2c94ed-3999-46d1-a86a-10dfe5aa92ff` |
 | Luminaire type | `downlight` (conf=1.00) |
-| Matchable attrs | 7 |
-| Informational attrs | 3 |
+| Matchable attrs | 8 |
+| Informational attrs | 2 |
 
 ### Matching Results (1 assessed, 0 pending, 0 disqualified, 28 excluded)
 
@@ -34,20 +34,18 @@
 
 | Field | Value |
 |-------|-------|
-| Requirement ID | `aacfb018-c941-4d86-af63-0b73a97b0efe` |
+| Requirement ID | `003999ce-2c38-4932-bd87-85c129b0fc80` |
 | Luminaire type | `flexible_tape` (conf=1.00) |
 | Matchable attrs | 8 |
 | Informational attrs | 0 |
 
-### Matching Results (21 assessed, 0 pending, 0 disqualified, 8 excluded)
+### Matching Results (1 assessed, 20 pending, 0 disqualified, 8 excluded)
 
 | Rank | Product | Fit% | Conf | Band | Dev(H/M/L) |
 |------|---------|------|------|------|-----------|
-| 1 | ILTI LUCE — 1-WKL-6023-0-00 | 69.7% | 0.50 | Med | 0/1/1 |
-| 2 | ILTI LUCE — 1-WKL-3021-1-00 | 69.7% | 0.50 | Med | 0/1/1 |
-| 3 | ILTI LUCE — 1-WKL-4501-0-00 | 69.0% | 0.50 | Med | 1/0/1 |
-| 4 | ILTI LUCE — 1-WKL-4502-0-00 | 62.8% | 0.50 | Med | 1/0/1 |
-| 5 | EXAMPLE Opal Profile + ILTI LUCE — 1-WKL-6023-0-00 | 55.2% | 0.50 | Med | 1/1/1 |
+| 1 | EXAMPLE Opal Profile + ILTI LUCE — 1-WKL-6023-0-00 [COMBO] | 55.2% | 0.50 | Med | 1/1/1 |
+
+**Pending characterisation (20):** ILTI LUCE — 1-WKL-4511-0-00, ILTI LUCE — 1-WKL-6024-0-00, ILTI LUCE — 1-WKL-3027-0-00, ILTI LUCE — 1-WKL-7101-0-00, ILTI LUCE — 1-WKL-6022-0-00, ILTI LUCE — 1-WKL-7102-0-00, ILTI LUCE — 1-WKL-7103-0-00, ILTI LUCE — 1-WKL-6023-0-00, ILTI LUCE — 1-WKL-4501-0-00, ILTI LUCE — 1-WKL-4502-0-00, ILTI LUCE — 1-WKL-7100-0-00, ILTI LUCE — 1-WKL-3021-1-00, ILTI LUCE — 1-WKL-3022-1-00, ILTI LUCE — 1-WKL-3026-0-00, ILTI LUCE — 1-WKL-3011-1-00, ILTI LUCE — 1-WKL-3020-1-00, ILTI LUCE — 1-WKL-3025-0-00, ILTI LUCE — 1-WKL-4500-0-00, ILTI LUCE — 1-WKL-3010-1-00, ILTI LUCE — 1-WKL-4510-0-00
 
 ---
 
@@ -55,10 +53,10 @@
 
 | Field | Value |
 |-------|-------|
-| Requirement ID | `c3290a01-3507-4057-b499-97ae822a0c2c` |
+| Requirement ID | `1d7beed4-fcf1-4453-a5d6-ae597225bab0` |
 | Luminaire type | `linear` (conf=0.90) |
-| Matchable attrs | 6 |
-| Informational attrs | 4 |
+| Matchable attrs | 7 |
+| Informational attrs | 3 |
 
 ### Matching Results (0 assessed, 0 pending, 0 disqualified, 29 excluded)
 
@@ -72,7 +70,7 @@ _No assessed candidates ranked._
 
 | Field | Value |
 |-------|-------|
-| Requirement ID | `c632bcdb-400d-47a0-ba58-bb15c7900e6f` |
+| Requirement ID | `10faee2e-7d3c-4f8a-9dc2-2f08731f3ea5` |
 | Luminaire type | `floodlight` (conf=1.00) |
 | Matchable attrs | 8 |
 | Informational attrs | 4 |
