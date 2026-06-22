@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import {
   CheckCircle2,
   XCircle,
@@ -10,6 +10,9 @@ import {
   FileText,
   ArrowRight,
   RefreshCw,
+  Download,
+  Package,
+  Eye,
 } from 'lucide-react';
 import { useSubmittalCompleteness } from '@/hooks/use-submittal-completeness';
 import { useAuth } from '@/context/auth-context';
@@ -20,7 +23,7 @@ import { Badge } from '@/components/ui/badge';
 import { Alert } from '@/components/ui/alert';
 import { ProgressBar } from '@/components/ui/progress-bar';
 import { cn } from '@/lib/utils';
-import type { SubmittalProjectScopeItem, SubmittalRequirementRow } from '@/types';
+import type { SubmittalProjectScopeItem, SubmittalRequirementRow, PackageManifest, PackageManifestItem } from '@/types';
 
 // ─── Item row ──────────────────────────────────────────────────────────────
 
@@ -203,6 +206,64 @@ function PerItemSection({
   );
 }
 
+// ─── Package manifest row ──────────────────────────────────────────────────
+
+function ManifestRow({ item }: { item: PackageManifestItem }) {
+  const statusBg =
+    item.status === 'present' || item.status === 'generated'
+      ? 'border-success/15 bg-success-soft/10'
+      : item.status === 'missing_overridden'
+      ? 'border-warning/20 bg-warning-soft/20'
+      : 'border-danger/15 bg-danger-soft/10';
+  const statusIcon =
+    item.status === 'present' || item.status === 'generated' ? (
+      <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-success mt-0.5" />
+    ) : item.status === 'missing_overridden' ? (
+      <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-warning mt-0.5" />
+    ) : (
+      <XCircle className="h-3.5 w-3.5 shrink-0 text-danger mt-0.5" />
+    );
+
+  const location = item.in_pdf
+    ? <span className="text-xs text-ink-faint">In PDF</span>
+    : item.in_zip
+    ? <span className="text-xs text-warning">ZIP: {item.filename}</span>
+    : <span className="text-xs text-ink-faint">—</span>;
+
+  return (
+    <div className={cn('flex items-start gap-2 rounded border px-3 py-2', statusBg)}>
+      {statusIcon}
+      <div className="flex-1 min-w-0">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs font-medium text-ink">{item.label}</span>
+          {(item.item_code ?? item.requirement_name) && (
+            <span className="text-xs text-ink-faint">
+              {item.item_code ?? item.requirement_name}
+            </span>
+          )}
+          {location}
+        </div>
+        {item.note && (
+          <p className="mt-0.5 text-xs text-ink-muted italic">{item.note}</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Download helper ───────────────────────────────────────────────────────
+
+function triggerDownload(base64: string, filename: string, mimeType: string) {
+  const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
+  const blob  = new Blob([bytes], { type: mimeType });
+  const url   = URL.createObjectURL(blob);
+  const a     = document.createElement('a');
+  a.href      = url;
+  a.download  = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 // ─── Page ──────────────────────────────────────────────────────────────────
 
 export default function SubmittalPage({ params }: { params: { id: string } }) {
@@ -213,6 +274,59 @@ export default function SubmittalPage({ params }: { params: { id: string } }) {
   const [gateError, setGateError] = useState<string | null>(null);
   const [overrideMode, setOverrideMode] = useState(false);
   const [overrideReason, setOverrideReason] = useState('');
+
+  // Package assembly state
+  const [manifest, setManifest] = useState<PackageManifest | null>(null);
+  const [manifestLoading, setManifestLoading] = useState(false);
+  const [manifestError, setManifestError] = useState<string | null>(null);
+  const [generating, setGenerating] = useState(false);
+  const [genError, setGenError] = useState<string | null>(null);
+  const [genOverrideMode, setGenOverrideMode] = useState(false);
+  const [genOverrideReason, setGenOverrideReason] = useState('');
+
+  const handlePreviewManifest = useCallback(async () => {
+    if (!token) return;
+    setManifestLoading(true);
+    setManifestError(null);
+    try {
+      const m = await api.submittalPackage.manifest(token, params.id);
+      setManifest(m);
+    } catch (err) {
+      setManifestError(err instanceof Error ? err.message : 'Failed to load manifest.');
+    } finally {
+      setManifestLoading(false);
+    }
+  }, [token, params.id]);
+
+  const handleGenerate = useCallback(async (withOverride = false) => {
+    if (!token) return;
+    setGenerating(true);
+    setGenError(null);
+    try {
+      const result = await api.submittalPackage.generate(token, params.id, {
+        is_override:     withOverride,
+        override_reason: withOverride && genOverrideReason ? genOverrideReason : undefined,
+      });
+      setManifest(result.manifest);
+      setGenOverrideMode(false);
+      setGenOverrideReason('');
+      // Trigger PDF download
+      triggerDownload(result.pdf_base64, result.pdf_filename, 'application/pdf');
+      // Trigger ZIP download if present
+      if (result.zip_base64 && result.zip_filename) {
+        triggerDownload(result.zip_base64, result.zip_filename, 'application/zip');
+      }
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 422) {
+        setGenError(err.message);
+        setGenOverrideMode(true);
+      } else {
+        setGenError(err instanceof Error ? err.message : 'Package generation failed.');
+      }
+    } finally {
+      setGenerating(false);
+    }
+  }, [token, params.id, genOverrideReason]);
 
   async function handleGateCheck(withOverride = false) {
     if (!token) return;
@@ -415,6 +529,129 @@ export default function SubmittalPage({ params }: { params: { id: string } }) {
                 loading={gateChecking}
               >
                 Check export readiness
+              </Button>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Package assembly */}
+      {!completeness.no_template && (
+        <Card>
+          <CardHeader>
+            <CardTitle>
+              <Package className="h-4 w-4 text-brand" />
+              Generate Submittal Package
+            </CardTitle>
+            <p className="text-xs text-ink-faint">
+              Assembles all documents into one ordered PDF (index + compliance statements + linked
+              uploads). Non-PDF attachments are bundled in a companion ZIP.
+            </p>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {/* Manifest preview */}
+            <div className="flex gap-2">
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={handlePreviewManifest}
+                loading={manifestLoading}
+              >
+                <Eye className="h-3.5 w-3.5" />
+                Preview manifest
+              </Button>
+            </div>
+
+            {manifestError && (
+              <Alert variant="error" onDismiss={() => setManifestError(null)}>
+                {manifestError}
+              </Alert>
+            )}
+
+            {manifest && (
+              <div className="space-y-2">
+                <div className="flex items-center gap-3">
+                  <p className="text-xs font-medium text-ink">
+                    {manifest.template_name} · {manifest.items.length} components
+                  </p>
+                  <span
+                    className={cn(
+                      'inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium',
+                      manifest.gate_state === 'ready'
+                        ? 'bg-success/10 text-success'
+                        : manifest.gate_state === 'override_applied'
+                        ? 'bg-warning/10 text-warning'
+                        : 'bg-danger/10 text-danger',
+                    )}
+                  >
+                    {manifest.gate_state === 'ready'
+                      ? 'Ready'
+                      : manifest.gate_state === 'override_applied'
+                      ? 'Override applied'
+                      : 'Blocked'}
+                  </span>
+                </div>
+                <div className="max-h-72 overflow-y-auto space-y-1 rounded-lg border border-border p-2">
+                  {manifest.items.map((item, idx) => (
+                    <ManifestRow key={`${item.template_item_id}-${item.requirement_id ?? idx}`} item={item} />
+                  ))}
+                </div>
+                <p className="text-xs text-ink-faint">
+                  {manifest.pdf_component_count} PDF component{manifest.pdf_component_count !== 1 ? 's' : ''} · {manifest.zip_component_count} ZIP attachment{manifest.zip_component_count !== 1 ? 's' : ''}
+                </p>
+              </div>
+            )}
+
+            {/* Generation errors + override */}
+            {genError && (
+              <Alert variant="error" onDismiss={() => { setGenError(null); setGenOverrideMode(false); }}>
+                {genError}
+              </Alert>
+            )}
+
+            {genOverrideMode && (
+              <div className="space-y-2 rounded-lg border border-warning/30 bg-warning-soft/30 px-4 py-3">
+                <p className="text-sm font-medium text-warning">Override required to generate</p>
+                <p className="text-xs text-ink-muted">
+                  The submittal has missing required items. Provide a reason to generate the
+                  package with override (logged for audit).
+                </p>
+                <input
+                  type="text"
+                  placeholder="Override reason (e.g. supplier lead-time, pending certification)"
+                  value={genOverrideReason}
+                  onChange={(e) => setGenOverrideReason(e.target.value)}
+                  className="w-full rounded-md border border-border bg-surface px-3 py-1.5 text-sm text-ink placeholder:text-ink-faint focus:outline-none focus:ring-2 focus:ring-primary/30"
+                />
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    onClick={() => handleGenerate(true)}
+                    loading={generating}
+                    disabled={!genOverrideReason.trim()}
+                  >
+                    <Download className="h-3.5 w-3.5" />
+                    Generate with override
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => { setGenOverrideMode(false); setGenError(null); }}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {!genOverrideMode && (
+              <Button
+                size="sm"
+                onClick={() => handleGenerate(false)}
+                loading={generating}
+              >
+                <Download className="h-3.5 w-3.5" />
+                Generate package
               </Button>
             )}
           </CardContent>

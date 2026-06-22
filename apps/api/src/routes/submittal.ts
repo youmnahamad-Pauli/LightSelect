@@ -1,5 +1,5 @@
 /**
- * Submittal template + completeness routes — INCREMENT 3.
+ * Submittal template + completeness + package routes — INCREMENTS 3 & 4.
  *
  * GET    /submittal-templates                             — list
  * POST   /submittal-templates                             — create
@@ -14,6 +14,9 @@
  * GET    /projects/:projectId/submittal-completeness      — compute completeness
  * POST   /projects/:projectId/submittal-completeness/check — gate check (override flag)
  *
+ * GET    /projects/:projectId/submittal-package/manifest  — preview manifest (no gate)
+ * POST   /projects/:projectId/submittal-package/generate  — assemble package (respects gate)
+ *
  * PATCH  /project-documents/:docId/item-link              — link doc to schedule item
  */
 import { Router, type Request, type Response, type NextFunction } from 'express';
@@ -27,6 +30,7 @@ import { getOrgId } from '../middleware/org-scope';
 import { AppError } from '../lib/errors';
 import { success } from '../lib/response';
 import { buildSubmittalCompleteness } from '../services/submittal-completeness';
+import { buildPackageManifest, assembleSubmittalPackage } from '../services/submittal-package';
 
 // ─── Shared helpers ────────────────────────────────────────────────────────────
 
@@ -338,6 +342,47 @@ submittalProjectRouter.post(
         override_applied:  true,
         missing_items:     missingItems,
         completeness_summary: completeness.summary,
+      });
+    } catch (err) { return next(err); }
+  },
+);
+
+// GET /projects/:projectId/submittal-package/manifest
+submittalProjectRouter.get(
+  '/:projectId/submittal-package/manifest',
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const orgId = getOrgId(req);
+      const { projectId } = req.params as { projectId: string };
+      await assertProjectAccess(projectId, orgId);
+      const manifest = await buildPackageManifest(projectId);
+      return success(res, manifest);
+    } catch (err) { return next(err); }
+  },
+);
+
+// POST /projects/:projectId/submittal-package/generate
+submittalProjectRouter.post(
+  '/:projectId/submittal-package/generate',
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const orgId = getOrgId(req);
+      const { projectId } = req.params as { projectId: string };
+      await assertProjectAccess(projectId, orgId);
+
+      const { is_override = false, override_reason } = req.body as {
+        is_override?: boolean;
+        override_reason?: string;
+      };
+
+      const pkg = await assembleSubmittalPackage(projectId, { is_override, override_reason });
+
+      return success(res, {
+        manifest:     pkg.manifest,
+        pdf_base64:   pkg.pdf.toString('base64'),
+        pdf_filename: pkg.pdf_filename,
+        zip_base64:   pkg.zip ? pkg.zip.toString('base64') : null,
+        zip_filename: pkg.zip_filename,
       });
     } catch (err) { return next(err); }
   },

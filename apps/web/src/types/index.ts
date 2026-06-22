@@ -988,3 +988,42 @@ export interface SubmittalGateCheckResult {
   missing_items: string[];
   completeness_summary: SubmittalCompletenessSummary;
 }
+
+// ─── Submittal Package (INCREMENT 4) ───────────────────────────────────────
+
+export interface PackageManifestItem {
+  pdf_component_index?: number;
+  template_item_id: string;
+  sort_order: number;
+  label: string;
+  document_type: string;
+  scope: 'project' | 'per_item';
+  requirement_id?: string;
+  requirement_name?: string;
+  item_code?: string;
+  status: 'present' | 'generated' | 'missing_overridden' | 'missing';
+  filename?: string;
+  mime_type?: string;
+  in_pdf: boolean;
+  in_zip: boolean;
+  note?: string;
+}
+
+export interface PackageManifest {
+  project_id: string;
+  template_id: string;
+  template_name: string;
+  generated_at: string;
+  gate_state: 'ready' | 'override_applied' | 'blocked';
+  items: PackageManifestItem[];
+  pdf_component_count: number;
+  zip_component_count: number;
+}
+
+export interface PackageGenerateResult {
+  manifest: PackageManifest;
+  pdf_base64: string;
+  pdf_filename: string;
+  zip_base64: string | null;
+  zip_filename: string | null;
+}
