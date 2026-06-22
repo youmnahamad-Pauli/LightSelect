@@ -25,7 +25,19 @@ export type MatchingOperator = (typeof matchingOperators)[number];
 export const gateTypes = ['hard', 'soft', 'conditional'] as const;
 export type GateType = (typeof gateTypes)[number];
 
-export const matchDecisionStatuses = ['evaluated', 'disqualified', 'excluded'] as const;
+export const matchDecisionStatuses = [
+  'evaluated',
+  'disqualified',
+  'excluded',
+  /**
+   * Passed all gates but the requirement specifies a lumen output and this
+   * candidate's delivered lumen is pending characterisation (bare
+   * component_build strip with no configured diffuser combo). Candidate has
+   * evidence for non-lumen attributes but NO headline fit score and is NOT
+   * ranked among assessed candidates. Surfaces in a distinct UI group.
+   */
+  'pending_characterisation',
+] as const;
 export type MatchDecisionStatus = (typeof matchDecisionStatuses)[number];
 
 export const verdictTypes = [

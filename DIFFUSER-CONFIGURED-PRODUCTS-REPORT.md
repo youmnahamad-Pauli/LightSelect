@@ -182,9 +182,76 @@ Per task spec — not implemented:
 
 ---
 
+---
+
+## Ranking Inversion Fix — `pending_characterisation` State (Task 7b)
+
+Branch: `feature/diffuser-configured-products`
+Date: 22 Jun 2026
+
+### Problem (before fix)
+
+Bare component_build strips scored 100% fit because `delivered_pending` was excluded from the fit denominator — there was no lumen score to count. Result: bare WKL strips ranked #1–3 above the configured combo (rank #4, 76.9%). An unassessable candidate outranked the only assessable one.
+
+### Fix
+
+Added `pending_characterisation` as a first-class candidate state (alongside `evaluated`, `disqualified`, `excluded`) in the matching engine.
+
+**Logic** (`apps/api/src/lib/matching/engine.ts`):
+
+1. After gate evaluation and scored attribute evaluation, check: does the requirement specify a lumen attribute (`lumens_per_metre` or `lumens`)? (`requirementSpecifiesLumen`)
+2. If yes, and any scored verdict for this candidate is `delivered_pending` on a lumen key → push into `pending_characterisation` bucket with `fit_score: null`, no rank.
+3. If the requirement does NOT specify lumen, `delivered_pending` is irrelevant — candidate is assessed normally.
+4. Ranking filter: `!e.excluded && !e.pending_characterisation && e.passed_all_hard_gates && e.fit_score !== null`.
+5. `persistResults`: maps `pending_characterisation` → `status = 'pending_characterisation'` in `match_decisions`.
+
+**Schema** (`apps/api/src/db/schema/matching.ts`):
+
+`matchDecisionStatuses` now includes `'pending_characterisation'`.
+
+**Types** (`apps/api/src/lib/matching/types.ts`):
+
+`MatchEvaluation` gains `pending_characterisation: boolean` and `pending_characterisation_reason: string | null`. Per-attribute `evidence` is still populated (non-lumen attributes have full verdicts); no headline fit or confidence.
+
+### Verification — seeded flexible-tape requirement (target 2000 lm/m)
+
+```
+ASSESSED & RANKED (1):
+  Rank  Product                                Fit%   Conf  Band  Dev(H/M/L)
+     1  EXAMPLE Opal Profile + ILTI LUCE — … ⚠ 76.9%  0.60  Med   1/0/0   [COMBO]
+
+PENDING CHARACTERISATION — LUMEN NOT ASSESSABLE (18):
+  (bare component_build strips — pair with a characterised profile to assess)
+  ⏳ ILTI LUCE — 1-WKL-6024-0-00 — source 2000 lm/m, delivered pending
+  ⏳ ILTI LUCE — 1-WKL-6023-0-00 — source 1850 lm/m, delivered pending
+  … (16 more)
+
+DISQUALIFIED — HARD GATE FAILED (2): colour_family: rgb / rgbw ≠ white
+EXCLUDED — TYPE MISMATCH (8): profiles + downlight
+```
+
+**Before fix**: bare strips at rank #1–3, combo at rank #4.  
+**After fix**: combo is sole assessed candidate at rank #1 (76.9%, −26% lumen deviation). Bare strips in `pending_characterisation`, below, no fit score, flagged "delivered pending — pair with a characterised profile to assess".
+
+### Side-by-side output
+
+```
+Product                                   Group         Lumen Verdict
+────────────────────────────────────────────────────────────────────────
+1-WKL-6023 (bare strip)                   pending_char  DELIVERED_PENDING
++ EXAMPLE Opal (combo, delivered=1480)    assessed      DEVIATION (−26%)
+────────────────────────────────────────────────────────────────────────
+```
+
+### Tests
+
+35/35 pass.
+
+---
+
 ## Needs human decision
 
-1. **Bare strip rank order**: Currently bare strips score 100% and rank above combos (lumen weight not counted). Should bare strips be sorted to the bottom of assessed candidates regardless of fit? This is a UX question, not a correctness issue.
+1. **Bare strip rank order**: Resolved by Task 7b — bare strips are now in `pending_characterisation`, not ranked among assessed candidates.
 
 2. **Item_code required vs optional**: `matching_requirements.item_code` is nullable. The XLSX sheet name falls back to the luminaire type slug if null. Should item_code be required for exports, blocking generation if not set?
 

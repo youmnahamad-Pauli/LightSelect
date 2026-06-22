@@ -370,12 +370,15 @@ async function main() {
   console.log(`  MATCH RESULTS (DIFFUSER PASS) — ${req.name}`);
   console.log('═══════════════════════════════════════════════════════════════════');
 
-  const excluded     = evaluations.filter((e) => e.excluded);
-  const disqualified = evaluations.filter((e) => !e.excluded && !e.passed_all_hard_gates);
-  const scored       = evaluations.filter((e) => !e.excluded && e.passed_all_hard_gates);
+  const excluded               = evaluations.filter((e) => e.excluded);
+  const disqualified           = evaluations.filter((e) => !e.excluded && !e.passed_all_hard_gates);
+  const pendingChar            = evaluations.filter((e) => e.pending_characterisation);
+  const scored                 = evaluations.filter(
+    (e) => !e.excluded && !e.pending_characterisation && e.passed_all_hard_gates,
+  );
   scored.sort((a, b) => ((a as any).rank ?? 999) - ((b as any).rank ?? 999));
 
-  console.log(`\n  PASSED GATES & SCORED (${scored.length}):`);
+  console.log(`\n  ASSESSED & RANKED (${scored.length}):`);
   if (scored.length === 0) {
     console.log('    (none)');
   } else {
@@ -389,41 +392,42 @@ async function main() {
       const band = (e.confidence_band ?? 'N/A').padEnd(4);
       const cap  = e.deviations_high_weight > 0 ? '⚠ ' : '  ';
       const dev  = `${e.deviations_high_weight}/${e.deviations_medium_weight}/${e.deviations_low_weight}`;
-
-      // Check for delivered_pending lumen verdict
-      const lumenEvidence = e.evidence.find(
-        (ev) => ev.attribute_key === 'lumens_per_metre' || ev.attribute_key === 'lumens',
-      );
-      const lumenTag = lumenEvidence?.verdict === 'delivered_pending' ? ' [DELIVERED PENDING]' : '';
-
-      console.log(`  ${String(rank).padStart(2)}    ${name}  ${cap}${fit.padStart(6)}  ${conf}  ${band}  ${dev.padEnd(9)}   ${e.comments_count}${lumenTag}`);
+      const configTag = e.candidate.is_configured_product ? ' [COMBO]' : '';
+      console.log(`  ${String(rank).padStart(2)}    ${name}  ${cap}${fit.padStart(6)}  ${conf}  ${band}  ${dev.padEnd(9)}   ${e.comments_count}${configTag}`);
     }
   }
 
   // ── Side-by-side: bare strip vs configured combo ─────────────────────────
-  const wkl6023Eval  = scored.find((e) => e.candidate.display_name.includes('1-WKL-6023') &&
-    !e.candidate.is_configured_product);
-  const comboEval    = scored.find((e) => e.candidate.is_configured_product &&
+  const wkl6023Pending = pendingChar.find((e) => e.candidate.display_name.includes('1-WKL-6023'));
+  const comboEval      = scored.find((e) => e.candidate.is_configured_product &&
     e.candidate.display_name.includes('6023'));
 
-  if (wkl6023Eval || comboEval) {
-    console.log('\n  ── SIDE-BY-SIDE: bare strip vs configured combo ─────────────────────');
-    console.log('  Product                                   Lumen Verdict      Evidence');
-    console.log('  ─────────────────────────────────────────────────────────────────────');
+  console.log('\n  ── SIDE-BY-SIDE: bare strip vs configured combo ─────────────────────');
+  console.log('  Product                                   Group                Lumen Verdict');
+  console.log('  ─────────────────────────────────────────────────────────────────────────');
 
-    const printRow = (label: string, e: typeof scored[0] | undefined) => {
-      if (!e) { console.log(`  ${label.padEnd(40)}  (not in scored pool)`); return; }
-      const lumenEv = e.evidence.find((ev) =>
-        ev.attribute_key === 'lumens_per_metre' || ev.attribute_key === 'lumens',
-      );
-      const verdict = lumenEv?.verdict ?? 'n/a';
-      const note    = lumenEv?.evidence_note ?? '';
-      console.log(`  ${label.padEnd(40)}  ${verdict.toUpperCase().padEnd(20)} ${note.slice(0, 60)}`);
-    };
+  const printRow = (label: string, group: string, e: typeof evaluations[0] | undefined) => {
+    if (!e) { console.log(`  ${label.padEnd(40)}  ${group.padEnd(20)} (not found)`); return; }
+    const lumenEv = e.evidence.find((ev) =>
+      ev.attribute_key === 'lumens_per_metre' || ev.attribute_key === 'lumens',
+    );
+    const verdict = lumenEv?.verdict ?? 'n/a';
+    const note    = (lumenEv?.evidence_note ?? '').slice(0, 55);
+    console.log(`  ${label.padEnd(40)}  ${group.padEnd(20)} ${verdict.toUpperCase().padEnd(20)} ${note}`);
+  };
 
-    printRow('1-WKL-6023 (bare strip)', wkl6023Eval);
-    printRow('+ EXAMPLE Opal (combo, delivered=1480)', comboEval);
-    console.log('  ─────────────────────────────────────────────────────────────────────');
+  printRow('1-WKL-6023 (bare strip)', 'pending_char', wkl6023Pending);
+  printRow('+ EXAMPLE Opal (combo, delivered=1480)', 'assessed', comboEval);
+  console.log('  ─────────────────────────────────────────────────────────────────────────');
+
+  console.log(`\n  PENDING CHARACTERISATION — LUMEN NOT ASSESSABLE (${pendingChar.length}):`);
+  console.log('  (bare component_build strips — pair with a characterised profile to assess)');
+  for (const e of pendingChar) {
+    const lumenEv = e.evidence.find((ev) =>
+      ev.attribute_key === 'lumens_per_metre' || ev.attribute_key === 'lumens',
+    );
+    const sourceLm = lumenEv?.product_value ?? '?';
+    console.log(`    ⏳ ${e.candidate.display_name} — source ${sourceLm} lm/m, delivered pending`);
   }
 
   console.log(`\n  DISQUALIFIED — HARD GATE FAILED (${disqualified.length}):`);
