@@ -64,6 +64,18 @@ export const matching_requirements = pgTable('matching_requirements', {
   description: text('description'),
   /** Certifications or scheme approvals that candidate products must hold or obtain. */
   approvals_required: text('approvals_required').array(),
+  /**
+   * Optional item/line code from the consultant schedule, e.g. "LCL-015".
+   * Used as the XLSX sheet name in consultant exports. Null → export uses a derived fallback.
+   */
+  item_code: text('item_code'),
+  /**
+   * Informational specified fields captured by the spec parser that are NOT
+   * written to matching_requirement_attrs (e.g. body material, finish).
+   * Stored as [{ key, label, value }] for display in the export "Specified" column.
+   * Never read by the matching engine.
+   */
+  informational_attrs: jsonb('informational_attrs').$type<Array<{ key: string; label: string; value: string }>>(),
   // Conditional gate activation flags (only evaluate those gates when true)
   flag_wind_load: boolean('flag_wind_load').notNull().default(false),
   flag_dark_sky: boolean('flag_dark_sky').notNull().default(false),
