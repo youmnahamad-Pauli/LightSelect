@@ -25,6 +25,7 @@ import { exportProjectRouter, exportRouter } from './routes/exports';
 import { profilesRouter, accessoriesRouter, configuredProductsRouter } from './routes/catalogue';
 import { ingestionRouter } from './routes/ingestion';
 import { matchingRouter } from './routes/matching';
+import { specParserRouter } from './routes/spec-parser';
 import { errorHandler } from './middleware/error-handler';
 
 const app = express();
@@ -70,6 +71,7 @@ app.use('/catalogue/accessories', accessoriesRouter);
 app.use('/configured-products', configuredProductsRouter);
 app.use('/ingestion', ingestionRouter);
 app.use('/matching', matchingRouter);
+app.use('/spec-parser', specParserRouter);
 
 app.use(errorHandler);
 

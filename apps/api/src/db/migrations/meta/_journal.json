@@ -50,6 +50,13 @@
       "when": 1782259200000,
       "tag": "0006_delivery_combos",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1782432000000,
+      "tag": "0007_spec_parser",
+      "breakpoints": true
     }
   ]
 }
