@@ -10,7 +10,7 @@
  */
 
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, isNull } from 'drizzle-orm';
 import { matching_requirements, matching_requirement_attrs } from '../../db/schema/matching';
 import type { MatchingOperator, GateType } from '../../db/schema/matching';
 import type { MappedSpecItem, SpecItemWriteResult } from './types';
@@ -22,15 +22,23 @@ export async function writeSpecItem(
   orgId: string,
   projectId: string | null = null,
 ): Promise<SpecItemWriteResult> {
-  // Delete any existing requirement for this org + item_code (cascade deletes attrs + decisions)
+  // Delete any existing requirement scoped to the same (org, project, item_code).
+  // project_id IS NULL uses isNull() because eq(col, null) compiles to = NULL which never matches.
   if (item.item_code) {
     const existing = await db
       .select({ id: matching_requirements.id })
       .from(matching_requirements)
-      .where(and(
-        eq(matching_requirements.org_id, orgId),
-        eq(matching_requirements.item_code, item.item_code),
-      ));
+      .where(projectId
+        ? and(
+            eq(matching_requirements.org_id, orgId),
+            eq(matching_requirements.project_id, projectId),
+            eq(matching_requirements.item_code, item.item_code),
+          )
+        : and(
+            eq(matching_requirements.org_id, orgId),
+            isNull(matching_requirements.project_id),
+            eq(matching_requirements.item_code, item.item_code),
+          ));
     for (const r of existing) {
       await db.delete(matching_requirements).where(eq(matching_requirements.id, r.id));
     }

@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, boolean, timestamp, integer, jsonb } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, text, boolean, timestamp, date, integer, jsonb } from 'drizzle-orm/pg-core';
 import { users } from './users';
 import { organizations } from './organizations';
 
@@ -45,6 +45,7 @@ export const projects = pgTable('projects', {
   consultant_template_id: uuid('consultant_template_id').references(() => consultant_templates.id, {
     onDelete: 'set null',
   }),
+  planned_submittal_date: date('planned_submittal_date'),
   created_by: uuid('created_by').notNull().references(() => users.id),
   created_at: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updated_at: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),

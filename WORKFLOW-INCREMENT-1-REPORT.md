@@ -119,12 +119,51 @@ This is separate from the existing `files`/`project_files` system and managed en
 
 ## Needs human decision
 
-1. **`submittal_date` field**: the task spec mentions "created/submittal dates" as project model fields. The existing `projects` table has `created_at` but no planned submittal/deadline date. If a `planned_submittal_date` column is needed on the project card, add it as a nullable `date` column in a separate migration.
+1. **`submittal_date` field**: ~~Resolved in amendment 0009~~ — `planned_submittal_date` (nullable date) added to `projects` table.
 
-2. **Re-parse idempotency scope**: the spec parser deletes and recreates requirements by `(org_id, item_code)`. If a project has two specs with overlapping item codes (e.g. two issues of the same schedule), the second parse silently overwrites the first. Decide whether re-parse should be scoped to `(org_id, project_id, item_code)` instead — this is a one-line change in `writer.ts` once the policy is decided.
+2. **Re-parse idempotency scope**: ~~Resolved in amendment 0009~~ — idempotency is now scoped to `(org_id, project_id, item_code)`. The same item code in two different projects creates separate requirements and never overwrites across projects.
 
 3. **File storage root**: `storageDirForProject` uses `path.join(process.cwd(), '..', 'project-documents', ...)`. In production this should be replaced with object storage. The swap point is the `storageDirForProject` helper and the path construction in the upload handler — both in `routes/project-documents.ts`.
 
 4. **Document download**: the `stored_path` is persisted but there's no `GET /project-documents/:docId/download` endpoint. Required for the completeness review UI in Increment 3 to let reviewers open uploaded documents.
 
 5. **Spec parse trigger UX**: "Parse spec" is currently a manual button per spec document. Decide whether uploading a file already classified as `spec` should auto-trigger parsing (with confirmation), or keep it manual-only.
+
+---
+
+## Amendment — migration 0009 (project-scoped idempotency + planned_submittal_date)
+
+**Branch:** `feature/workflow-project-hub` (same branch, follow-up commit)
+
+### Changes
+
+| File | Change |
+|------|--------|
+| `migrations/0009_project_scoped_requirements.sql` | Two partial unique indexes + `planned_submittal_date` on `projects` |
+| `db/schema/projects.ts` | `planned_submittal_date` nullable `date` column |
+| `db/schema/matching.ts` | `uqOrgProjectItem` and `uqOrgItemNoProj` uniqueIndex definitions |
+| `lib/spec-parser/writer.ts` | Delete scoped to `(org_id, project_id, item_code)` — uses `isNull()` for unscoped case |
+| `migrations/meta/0009_snapshot.json` | New snapshot (id→prevId chain: 0008→0009) |
+| `migrations/meta/_journal.json` | idx 9 entry added |
+
+### Unique index strategy
+
+Two partial indexes enforce the correct scope without conflicting:
+
+```sql
+-- project-scoped requirements: each item_code is unique per (org, project)
+CREATE UNIQUE INDEX uq_req_org_project_item
+  ON matching_requirements (org_id, project_id, item_code)
+  WHERE project_id IS NOT NULL AND item_code IS NOT NULL;
+
+-- org-level requirements (no project): unique per (org, item_code) among unscoped rows
+CREATE UNIQUE INDEX uq_req_org_item_noproj
+  ON matching_requirements (org_id, item_code)
+  WHERE project_id IS NULL AND item_code IS NOT NULL;
+```
+
+PostgreSQL NULL semantics mean a NULL `project_id` is never equal to another NULL `project_id` in a plain unique index, so without the second partial index two unscoped rows with the same `item_code` could coexist. The pair of partial indexes closes both gaps.
+
+### Verification
+
+Parsing two specs that share item code `FLEX-01` into projects A and B now produces two `matching_requirements` rows, each with its own `project_id`. Re-parsing into project A deletes only project A's `FLEX-01` row (leaving B's intact). 35/35 tests passing. TypeScript: 0 errors.
