@@ -54,6 +54,10 @@ const DEVIATION_BG = 'FFFDE8E8';
 const DEVIATION_FG = 'FFC62828';
 const NA_FG        = 'FF9E9E9E';
 const ROW_BORDER   = 'FFE0E0E0';
+const OVERRIDE_BG  = 'FFFCE4EC';   // red-50 — override notice
+const OVERRIDE_FG  = 'FFC62828';   // red-800
+const NO_CAND_BG   = 'FFF5F5F5';   // grey-100 — no-candidate stub notice
+const NO_CAND_FG   = 'FF616161';   // grey-700
 
 // ─── Row spec ─────────────────────────────────────────────────────────────────
 
@@ -413,6 +417,25 @@ export class AecomXlsxTemplate implements ExportTemplate {
     addBannerRow(ws,
       `LIGHTING CONSULTANT: ${metadata.consultant}   |   REF: ${metadata.ref}   REV. ${metadata.revision}`,
       DARK_HDR_BG, DARK_HDR_FG, false, 10, 14);
+
+    // ── Override / no-candidate notice (immediately after header) ─────────
+
+    if (statement.is_override) {
+      const reason = statement.override_reason ?? 'override — review required';
+      addBannerRow(
+        ws,
+        `⚠  OVERRIDE — proposed against engine assessment: ${reason}`,
+        OVERRIDE_BG, OVERRIDE_FG, true, 10, 22,
+      );
+    }
+
+    if (statement.no_candidate) {
+      addBannerRow(
+        ws,
+        'NO COMPLIANT CANDIDATE IDENTIFIED — proposed product column is blank pending further supply-chain review',
+        NO_CAND_BG, NO_CAND_FG, true, 10, 22,
+      );
+    }
 
     addSpacer(ws);
 

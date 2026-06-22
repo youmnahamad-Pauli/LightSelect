@@ -160,3 +160,81 @@ No changes were made to the matching engine, scoring, gates, or ingestion pipeli
 3. **`no_candidates` in AECOM export**: Currently returns HTTP 422. Should the API
    instead export a "no candidate available" stub sheet so the consultant can see the
    requirement details even without a match?
+
+---
+
+## Amendment — Decisions Resolved (2026-06-22)
+
+The three items above were resolved as follows.
+
+### Decision 1 — Re-run and `needs_review` auto-clear
+
+**Resolved:** Auto-clear `selection_needs_review` ONLY on true same-candidate no-op recovery.
+
+Rules:
+- Before every persist run, `capturePreRunSelectionState()` snapshots the selected
+  candidate's current DB decision status and a normalised evidence signature
+  (`attribute_key|verdict|product_value|score|weighted_score` sorted + joined).
+- After `persistResults`, `maybeAutoClearNeedsReview()` reads the updated decision:
+  - Candidate absent or not `evaluated` → skip (dynamic `resolveSelectionState` logic handles).
+  - Was non-evaluated (`disqualified`/`pending`) before run, now `evaluated` → clean recovery →
+    clear `selection_needs_review`.
+  - Was `evaluated` before AND still `evaluated` AND evidence signatures are **identical** →
+    true no-op → clear `selection_needs_review`.
+  - Was `evaluated` before AND still `evaluated` AND evidence differs → data-change recovery →
+    **set** `selection_needs_review = true`.
+- `resolveSelectionState` now ORs the persisted `selection_needs_review` column into
+  the dynamic `needs_review` flag. If true, `needs_review_reason` is
+  "Selected candidate recovered with changed evidence — re-confirm selection to proceed".
+- `selection_needs_review` is cleared to `false` on PUT /selection (explicit re-confirm) and
+  DELETE /selection (selection cleared).
+
+**Schema addition:** migration `0011_selection_needs_review` adds
+`selection_needs_review boolean NOT NULL DEFAULT false` to `matching_requirements`.
+
+**Finding:** Evidence comparison between EVALUATED runs is reliable because
+`persistResults` upserts decisions (stable IDs) but deletes + recreates `match_evidence`
+rows. Any product data change alters `product_value`/`verdict`; any requirement weight
+change alters `score`/`weighted_score`. The comparison is gated on old status being
+`evaluated` to avoid spurious mismatch when comparing against disqualified-run evidence.
+
+### Decision 2 — Override notice inside XLSX
+
+**Resolved:** Override notice is visible inside the XLSX as a prominent full-width
+banner row immediately after the dark header band.
+
+- `SpineOptions.is_override` passes the flag to `MatchDecisionExportSource.resolve()`.
+- `resolve()` composes `override_reason` from the actual decision status and gate_failures:
+  - `pending_characterisation` → "pending_characterisation — delivered output not
+    characterised (awaiting diffuser transmission)"
+  - `disqualified` with gate_failures → "disqualified on `attr1`, `attr2`"
+  - Other → "assessment status: `<status>`"
+- `ComplianceStatement` gains `is_override: boolean` and `override_reason: string | null`.
+- `AecomXlsxTemplate.render()` inserts a red-50 / red-800 banner row
+  `⚠  OVERRIDE — proposed against engine assessment: <override_reason>` between the dark
+  header and the spacer whenever `statement.is_override` is true.
+- The AECOM export route passes `is_override: selectionState?.is_override ?? false` to
+  the spine options.
+
+### Decision 3 — `no_candidates` stub sheet instead of HTTP 422
+
+**Resolved:** When `resolved_canonical_product_id` is null, the export route renders a
+stub sheet and returns it with status 200 instead of returning HTTP 422.
+
+- New `MatchDecisionExportSource.resolveStub()` static method builds a
+  `ComplianceStatement` with:
+  - Metadata populated from the requirement.
+  - Attributes populated from `matching_requirement_attrs` (Specified column), Proposed = null.
+  - `proposed_product.display_name = 'No compliant candidate identified'`, all identity
+    fields null.
+  - `no_candidate: true`, `is_override: false`.
+- `ComplianceStatement` gains `no_candidate: boolean`.
+- `AecomXlsxTemplate.render()` inserts a grey-100 / grey-700 banner row
+  "NO COMPLIANT CANDIDATE IDENTIFIED — proposed product column is blank pending further
+  supply-chain review" when `statement.no_candidate` is true.
+- Response headers: `X-Selection-Mode: no_candidates` and `X-Unmatched: true` (machine-readable signal).
+
+### Verification
+
+All three code paths type-check cleanly (`npx tsc --noEmit` — zero errors in both
+`apps/api` and `apps/web`). 35/35 vitest unit tests pass unchanged.

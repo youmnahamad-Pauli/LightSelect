@@ -278,6 +278,13 @@ export interface SpineOptions {
   item_code?: string;
   /** Human-readable item type label. Defaults to requirement.name. */
   item_type?: string;
+  /**
+   * Pass true when the selection was made as an override (is_override=true).
+   * The spine will compose override_reason from decision.status + gate_failures
+   * and set is_override=true on the returned ComplianceStatement so templates
+   * can render a visible in-document override notice.
+   */
+  is_override?: boolean;
 }
 
 // ─── MatchDecisionExportSource ────────────────────────────────────────────────
@@ -514,12 +521,118 @@ export class MatchDecisionExportSource {
       raw_attributes:    rawAttributes,
     };
 
+    // ── 10. Override notice ──────────────────────────────────────────────
+
+    const isOverride = options?.is_override ?? false;
+    let overrideReason: string | null = null;
+
+    if (isOverride) {
+      if (decision.status === 'pending_characterisation') {
+        overrideReason = 'pending_characterisation — delivered output not characterised (awaiting diffuser transmission)';
+      } else if (decision.status === 'disqualified') {
+        const failedAttrs = (decision.gate_failures as Array<{ attr: string }> | null)
+          ?.map((f) => f.attr)
+          .join(', ');
+        overrideReason = failedAttrs
+          ? `disqualified on ${failedAttrs}`
+          : 'disqualified — failed one or more hard gates';
+      } else {
+        overrideReason = `assessment status: ${decision.status}`;
+      }
+    }
+
     return {
       metadata,
       general_description: req.description ?? req.name,
       proposed_product:    proposedProduct,
       attributes,
       gate_results:        gateResults,
+      is_override:         isOverride,
+      override_reason:     overrideReason,
+      no_candidate:        false,
+    };
+  }
+
+  /**
+   * Produce a stub ComplianceStatement for requirements with no assessable
+   * candidate. The Specified column is populated from requirement attrs;
+   * the Proposed column is blank. Templates render a "no candidate" notice
+   * rather than returning HTTP 422.
+   */
+  static async resolveStub(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    db: PostgresJsDatabase<any>,
+    requirementId: string,
+    options?: SpineOptions,
+  ): Promise<ComplianceStatement> {
+    const [req] = await db
+      .select()
+      .from(matching_requirements)
+      .where(eq(matching_requirements.id, requirementId))
+      .limit(1);
+
+    if (!req) throw new Error(`Requirement ${requirementId} not found`);
+
+    const reqAttrs = await db
+      .select()
+      .from(matching_requirement_attrs)
+      .where(eq(matching_requirement_attrs.requirement_id, requirementId));
+
+    const today = new Date().toLocaleDateString('en-GB', {
+      day: '2-digit', month: 'short', year: 'numeric',
+    });
+
+    const luminaireSlug = req.luminaire_type
+      .replace(/_/g, '-')
+      .toUpperCase()
+      .slice(0, 31);
+
+    const metadata: StatementMetadata = {
+      project_name: options?.project_name ?? 'LightSelect Project',
+      consultant:   options?.consultant   ?? 'AECOM',
+      date:         options?.date         ?? today,
+      revision:     options?.revision     ?? 'Rev A',
+      ref:          options?.ref          ?? req.id.slice(0, 8).toUpperCase(),
+      item_code:    options?.item_code    ?? req.item_code ?? luminaireSlug,
+      item_type:    options?.item_type    ?? req.name,
+    };
+
+    const attributes: AttributeEntry[] = reqAttrs.map((a) => ({
+      attribute_key:   a.attribute_key,
+      label:           attrLabel(a.attribute_key),
+      specified_value: formatSpecified(a.operator, a.target_value, a.target_unit ?? null),
+      proposed_value:  null,
+      verdict:         null,
+      comment:         null,
+      provenance:      null,
+      is_gate:         a.gate_type !== null,
+      weight:          a.weight ?? null,
+    }));
+
+    const stubProduct: import('./types').ProposedProduct = {
+      display_name:          'No compliant candidate identified',
+      manufacturer:          null,
+      model_code:            null,
+      country_of_origin:     null,
+      fit_score:             null,
+      rank:                  null,
+      archetype:             'unknown',
+      lumen_representation:  null,
+      is_configured_product: false,
+      luminaire_component:   null,
+      lamp_component:        null,
+      raw_attributes:        {},
+    };
+
+    return {
+      metadata,
+      general_description: req.description ?? req.name,
+      proposed_product:    stubProduct,
+      attributes,
+      gate_results:        [],
+      is_override:         false,
+      override_reason:     null,
+      no_candidate:        true,
     };
   }
 }

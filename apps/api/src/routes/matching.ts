@@ -156,6 +156,7 @@ async function resolveSelectionState(requirementId: string) {
       selected_candidate_id: matching_requirements.selected_candidate_id,
       selection_is_override: matching_requirements.selection_is_override,
       selected_at: matching_requirements.selected_at,
+      selection_needs_review: matching_requirements.selection_needs_review,
     })
     .from(matching_requirements)
     .where(eq(matching_requirements.id, requirementId))
@@ -223,13 +224,16 @@ async function resolveSelectionState(requirementId: string) {
   ) ?? null;
 
   const needsReview =
+    req.selection_needs_review ||
     !selectedDecision ||
     (selectedDecision.status !== 'evaluated' && !req.selection_is_override);
 
   const needsReviewReason = needsReview
-    ? (!selectedDecision
-        ? 'Selected candidate is no longer in match decisions — re-run matching'
-        : `Selected candidate is now ${selectedDecision.status} — review required`)
+    ? (req.selection_needs_review
+        ? 'Selected candidate recovered with changed evidence — re-confirm selection to proceed'
+        : (!selectedDecision
+            ? 'Selected candidate is no longer in match decisions — re-run matching'
+            : `Selected candidate is now ${selectedDecision.status} — review required`))
     : null;
 
   return {
@@ -244,6 +248,154 @@ async function resolveSelectionState(requirementId: string) {
     resolved_status: (selectedDecision?.status ?? null) as string | null,
     is_override: req.selection_is_override,
   };
+}
+
+// ── Evidence-change helpers (DECISION 1) ─────────────────────────────────────
+
+function evidenceSignature(rows: Array<{
+  attribute_key: string;
+  verdict: string;
+  product_value: string | null;
+  score: number | null;
+  weighted_score: number | null;
+}>): string {
+  return rows
+    .map((r) =>
+      `${r.attribute_key}|${r.verdict}|${r.product_value ?? ''}|${r.score ?? ''}|${r.weighted_score ?? ''}`,
+    )
+    .sort()
+    .join('\n');
+}
+
+/**
+ * Snapshot the pre-run state of the currently selected candidate:
+ * its canonical_product_id, its decision status, and a normalised
+ * evidence signature. Called BEFORE persistResults so we can detect
+ * whether evidence changed on the next run.
+ */
+async function capturePreRunSelectionState(requirementId: string): Promise<{
+  selectedCanonicalId: string | null;
+  oldStatus: string | null;
+  oldSignature: string | null;
+}> {
+  const [req] = await db
+    .select({
+      selected_candidate_type: matching_requirements.selected_candidate_type,
+      selected_candidate_id:   matching_requirements.selected_candidate_id,
+    })
+    .from(matching_requirements)
+    .where(eq(matching_requirements.id, requirementId))
+    .limit(1);
+
+  if (!req?.selected_candidate_type || !req?.selected_candidate_id) {
+    return { selectedCanonicalId: null, oldStatus: null, oldSignature: null };
+  }
+
+  const selectedCanonicalId = await resolveToCanonicalProductId(
+    req.selected_candidate_type,
+    req.selected_candidate_id,
+  );
+
+  if (!selectedCanonicalId) {
+    return { selectedCanonicalId: null, oldStatus: null, oldSignature: null };
+  }
+
+  const [existingDecision] = await db
+    .select({ id: match_decisions.id, status: match_decisions.status })
+    .from(match_decisions)
+    .where(and(
+      eq(match_decisions.requirement_id, requirementId),
+      eq(match_decisions.canonical_product_id, selectedCanonicalId),
+    ))
+    .limit(1);
+
+  if (!existingDecision) {
+    return { selectedCanonicalId, oldStatus: null, oldSignature: null };
+  }
+
+  if (existingDecision.status !== 'evaluated') {
+    // No evaluated evidence to compare against
+    return { selectedCanonicalId, oldStatus: existingDecision.status, oldSignature: null };
+  }
+
+  const evidenceRows = await db
+    .select({
+      attribute_key:  match_evidence.attribute_key,
+      verdict:        match_evidence.verdict,
+      product_value:  match_evidence.product_value,
+      score:          match_evidence.score,
+      weighted_score: match_evidence.weighted_score,
+    })
+    .from(match_evidence)
+    .where(eq(match_evidence.match_decision_id, existingDecision.id));
+
+  return {
+    selectedCanonicalId,
+    oldStatus: existingDecision.status,
+    oldSignature: evidenceSignature(evidenceRows),
+  };
+}
+
+/**
+ * After persistResults, compare old vs new evidence for the selected
+ * candidate. Clears selection_needs_review on a true no-op recovery;
+ * sets it when evidence changed (data-change recovery).
+ *
+ * Decision rules (DECISION 1):
+ *   - If candidate absent or not evaluated after run → skip (dynamic
+ *     resolveSelectionState handles the needs_review signal).
+ *   - If old status was not evaluated (recovering from disqualified/pending)
+ *     and new status is evaluated → clean recovery, clear the flag.
+ *   - If old+new both evaluated and evidence identical → no-op, clear.
+ *   - If old+new both evaluated and evidence differs → data-change, set flag.
+ */
+async function maybeAutoClearNeedsReview(
+  requirementId: string,
+  preRunState: { selectedCanonicalId: string | null; oldStatus: string | null; oldSignature: string | null },
+): Promise<void> {
+  const { selectedCanonicalId, oldStatus, oldSignature } = preRunState;
+  if (!selectedCanonicalId) return;
+
+  const [newDecision] = await db
+    .select({ id: match_decisions.id, status: match_decisions.status })
+    .from(match_decisions)
+    .where(and(
+      eq(match_decisions.requirement_id, requirementId),
+      eq(match_decisions.canonical_product_id, selectedCanonicalId),
+    ))
+    .limit(1);
+
+  if (!newDecision || newDecision.status !== 'evaluated') return;
+
+  if (oldStatus !== 'evaluated' || oldSignature === null) {
+    // Recovering from non-evaluated state → clean recovery → clear flag
+    await db
+      .update(matching_requirements)
+      .set({ selection_needs_review: false, updated_at: new Date() })
+      .where(eq(matching_requirements.id, requirementId));
+    return;
+  }
+
+  const newEvidenceRows = await db
+    .select({
+      attribute_key:  match_evidence.attribute_key,
+      verdict:        match_evidence.verdict,
+      product_value:  match_evidence.product_value,
+      score:          match_evidence.score,
+      weighted_score: match_evidence.weighted_score,
+    })
+    .from(match_evidence)
+    .where(eq(match_evidence.match_decision_id, newDecision.id));
+
+  const newSignature = evidenceSignature(newEvidenceRows);
+
+  await db
+    .update(matching_requirements)
+    .set({
+      selection_needs_review: newSignature !== oldSignature,
+      updated_at: new Date(),
+    })
+    .where(eq(matching_requirements.id, requirementId));
 }
 
 // ── PUT /matching/requirements/:id/selection — set proposed product ───────────
@@ -312,6 +464,7 @@ matchingRouter.put('/requirements/:id/selection', async (req: Request, res: Resp
         selected_candidate_id:   selectionRef.id,
         selection_is_override:   is_override,
         selected_at:             new Date(),
+        selection_needs_review:  false,
         updated_at:              new Date(),
       })
       .where(eq(matching_requirements.id, requirementId))
@@ -342,6 +495,7 @@ matchingRouter.delete('/requirements/:id/selection', async (req: Request, res: R
         selected_candidate_id:   null,
         selection_is_override:   false,
         selected_at:             null,
+        selection_needs_review:  false,
         updated_at:              new Date(),
       })
       .where(eq(matching_requirements.id, requirementId))
@@ -402,20 +556,39 @@ matchingRouter.get('/requirements/:id/export/aecom', async (req: Request, res: R
     const selectionState = await resolveSelectionState(requirementId);
     const resolvedCanonicalProductId = selectionState?.resolved_canonical_product_id ?? null;
 
+    const today = new Date().toLocaleDateString('en-GB', {
+      day: '2-digit', month: 'short', year: 'numeric',
+    });
+    const dateStr = new Date().toISOString().slice(0, 10);
+    const itemSlug = (reqRow.item_code ?? requirementId.slice(0, 8))
+      .toLowerCase().replace(/[^a-z0-9]+/g, '-');
+    const filename = `aecom-${itemSlug}-${dateStr}.xlsx`;
+
+    // No assessable candidate: stub sheet instead of 422 (DECISION 3)
     if (!resolvedCanonicalProductId) {
-      return res.status(422).json({
-        error: 'No assessable candidate available for this requirement. Run matching first.',
-        code: 'NO_CANDIDATE',
-      });
+      const sqlClient = postgres(process.env.DATABASE_URL!, { max: 1 });
+      const pgDb = drizzle(sqlClient);
+      try {
+        const statement = await MatchDecisionExportSource.resolveStub(pgDb, requirementId, {
+          date:     today,
+          revision: 'Rev A',
+          item_code: reqRow.item_code ?? undefined,
+          item_type: reqRow.name,
+        });
+        const buffer = await renderStatement(statement, 'aecom');
+        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+        res.setHeader('X-Selection-Mode', 'no_candidates');
+        res.setHeader('X-Unmatched', 'true');
+        return res.send(buffer);
+      } finally {
+        await sqlClient.end();
+      }
     }
 
     // Build spine using a fresh postgres connection (same pattern as the run endpoint)
     const sqlClient = postgres(process.env.DATABASE_URL!, { max: 1 });
     const pgDb = drizzle(sqlClient);
-
-    const today = new Date().toLocaleDateString('en-GB', {
-      day: '2-digit', month: 'short', year: 'numeric',
-    });
 
     try {
       const statement = await MatchDecisionExportSource.resolve(
@@ -423,10 +596,11 @@ matchingRouter.get('/requirements/:id/export/aecom', async (req: Request, res: R
         requirementId,
         resolvedCanonicalProductId,
         {
-          date:     today,
-          revision: 'Rev A',
-          item_code: reqRow.item_code ?? undefined,
-          item_type: reqRow.name,
+          date:       today,
+          revision:   'Rev A',
+          item_code:  reqRow.item_code ?? undefined,
+          item_type:  reqRow.name,
+          is_override: selectionState?.is_override ?? false,
         },
       );
 
@@ -434,10 +608,6 @@ matchingRouter.get('/requirements/:id/export/aecom', async (req: Request, res: R
 
       const isOverride = selectionState?.is_override ?? false;
       const mode = selectionState?.mode ?? 'auto';
-
-      const dateStr = new Date().toISOString().slice(0, 10);
-      const itemSlug = (reqRow.item_code ?? requirementId.slice(0, 8)).toLowerCase().replace(/[^a-z0-9]+/g, '-');
-      const filename = `aecom-${itemSlug}-${dateStr}.xlsx`;
 
       res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
       res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
@@ -468,10 +638,13 @@ async function handleRun(req: Request, res: Response, next: NextFunction, persis
     const evaluations = runEvaluation(requirement, candidates);
 
     if (persist) {
+      const preRunState = await capturePreRunSelectionState(requirementId);
       await persistResults(pgDb, evaluations as any);
+      await sqlClient.end();
+      await maybeAutoClearNeedsReview(requirementId, preRunState);
+    } else {
+      await sqlClient.end();
     }
-
-    await sqlClient.end();
 
     const scored = evaluations.filter((e) => !e.excluded && e.passed_all_hard_gates);
     const disqualified = evaluations.filter((e) => !e.excluded && !e.passed_all_hard_gates);
@@ -613,6 +786,9 @@ matchingRouter.post('/decisions/:id/confirm-attr', async (req: Request, res: Res
         ),
       );
 
+    // Snapshot selection state before re-run so we can detect evidence changes
+    const preRunState = await capturePreRunSelectionState(decision.requirement_id);
+
     // Re-run the full matching evaluation for this requirement
     const sqlClient = postgres(process.env.DATABASE_URL!, { max: 1 });
     const pgDb = drizzle(sqlClient);
@@ -633,6 +809,8 @@ matchingRouter.post('/decisions/:id/confirm-attr', async (req: Request, res: Res
     const evaluations = runEvaluation(requirement, candidates);
     await persistResults(pgDb, evaluations as any);
     await sqlClient.end();
+
+    await maybeAutoClearNeedsReview(decision.requirement_id, preRunState);
 
     // Return the updated decision + evidence
     const [updatedDecision] = await db

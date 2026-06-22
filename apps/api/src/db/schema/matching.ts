@@ -108,6 +108,13 @@ export const matching_requirements = pgTable('matching_requirements', {
   /** true when the selected candidate was disqualified/pending at selection time */
   selection_is_override: boolean('selection_is_override').notNull().default(false),
   selected_at: timestamp('selected_at', { withTimezone: true }),
+  /**
+   * Persisted flag: true when the selected candidate recovered to 'evaluated' via
+   * a DATA CHANGE between runs (evidence differed pre/post re-run). The user must
+   * explicitly re-confirm the selection before this clears. Cleared by PUT /selection
+   * or when an identical no-op re-run restores the same evidence.
+   */
+  selection_needs_review: boolean('selection_needs_review').notNull().default(false),
   created_at: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updated_at: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 }, (table) => ({

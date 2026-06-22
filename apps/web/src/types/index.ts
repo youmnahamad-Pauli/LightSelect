@@ -821,6 +821,7 @@ export interface MatchingRequirement {
   selected_candidate_id: string | null;
   selection_is_override: boolean;
   selected_at: string | null;
+  selection_needs_review: boolean;
   created_at: string;
   updated_at: string;
 }
