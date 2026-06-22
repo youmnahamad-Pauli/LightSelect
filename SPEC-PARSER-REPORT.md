@@ -240,7 +240,84 @@ The LCL-015 requirement specifies `led_per_metre ≥ 168` which is stricter than
 ## Deferred
 
 Per guardrails — not implemented:
-- Dimming as a hard gate in ATTR_CONFIG
 - `colour_family` default inference (spec-side)
 - AECOM export template wiring for `informational_attrs`
 - DOCX parser support
+
+---
+
+## Fix 1 — `pending_characterisation` for bare strips
+
+### Root cause
+
+`feature/spec-parser` was branched off `main`. The `delivered_pending` / `pending_characterisation`
+machinery (which prevents bare component_build strips from ranking against a lumen requirement) was
+implemented on `feature/diffuser-configured-products` and never merged to `main`. That feature was
+therefore absent from both main and this branch — the behaviour was not a parser bug. Parsed and
+seeded lumen requirements are structurally identical; neither triggered `pending_characterisation`
+because the engine logic simply did not exist on this branch.
+
+### Fix
+
+Ported the full machinery from `feature/diffuser-configured-products`:
+
+| File | Change |
+|------|--------|
+| `db/schema/matching.ts` | Added `'pending_characterisation'` to `matchDecisionStatuses`; `'delivered_pending'` to `verdictTypes` |
+| `lib/matching/types.ts` | Added `is_configured_product: boolean` to `MatchCandidate`; `pending_characterisation: boolean` + `pending_characterisation_reason: string \| null` to `MatchEvaluation` |
+| `lib/matching/scorer.ts` | `match_target_lumen` case: detect `archetype='component_build' && !is_configured_product` → emit `delivered_pending`; `verdictScore()` returns null for `delivered_pending`; `calculateFit()` excludes `delivered_pending` from applicable |
+| `lib/matching/confidence.ts` | `delivered_pending` verdicts score 0.0 in confidence calculation (lowers confidence band without excluding from denominator) |
+| `lib/matching/engine.ts` | `loadCandidates`: detect `is_configured_product` from product attributes; `runEvaluation`: compute `requirementSpecifiesLumen` before candidate loop; after scored verdicts emit `pending_characterisation` evaluation and `continue` when `candidateHasPendingLumen`; ranking filter excludes `pending_characterisation`; `persistResults` maps `pending_characterisation` status |
+| `db/spec-parse.ts` | Removed `AnyEval` cast — `MatchEvaluation.pending_characterisation` now typed correctly |
+| `routes/spec-parser.ts` | Removed `(d.status as string)` cast — `'pending_characterisation'` is now a valid `MatchDecisionStatus` |
+
+### LCL-015 re-run result (after fix)
+
+| Group | Count | Notes |
+|-------|-------|-------|
+| Assessed | 3 | EXAMPLE Opal Profile combos only |
+| Pending characterisation | 18 | All bare ILTI WKL strips |
+| Disqualified | 0 | |
+| Excluded | 8 | Wrong luminaire_type |
+
+Bare strips (`1-WKL-6023-0-00`, etc.) no longer rank. The EXAMPLE Opal Profile + strip combos
+are the only assessed candidates. The bare strips surface below in the `pending_characterisation`
+group with `pending_characterisation_reason: 'delivered pending — pair with a characterised
+profile to assess'`.
+
+---
+
+## Fix 2 — DALI as hard gate
+
+### Analysis
+
+The `contains_value` comparator with `isGate=true`:
+- When the product **has** the `dimming` attribute and its value contains the required protocol → `gate_pass`
+- When the product **has** the attribute but the value does not match → `gate_fail` (disqualified)
+- When the product **lacks** the `dimming` attribute → `gate_unverifiable` (not disqualified, flagged)
+
+This is the correct behaviour: products that cannot do DALI are disqualified; products with no
+dimming data are flagged but not eliminated.
+
+### Fix
+
+| File | Change |
+|------|--------|
+| `lib/spec-parser/attr-config.ts` | Added `dimming` entry: `operator: 'contains_value'`, `gate_type: 'hard'`, `weight: null`, `informational: false` |
+| `lib/spec-parser/spec-llm.ts` | Added `dimming` to `MATCHING_ATTR_LIST` with gate semantics; updated `control_type` description to redirect mandatory protocols to `dimming`; fixed the ambiguous "For dimming:" extraction rule |
+
+### LCL-001 re-run result (after fix)
+
+LCL-001 specifies `DALI`. The parser now extracts `dimming: "DALI"` instead of `control_type: "DALI"`.
+
+| Product | Dimming attribute | Gate result |
+|---------|-------------------|-------------|
+| Signify BRP 331 | Not present | `gate_unverifiable` — flagged, not disqualified |
+
+The BRP 331 is not disqualified (no `dimming` attribute → `gate_unverifiable`). The gate failure
+is visible in evidence and soft_gate_comments. A human reviewer must verify DALI compatibility
+before approving the product.
+
+### Tests
+
+35/35 pass. No regressions.

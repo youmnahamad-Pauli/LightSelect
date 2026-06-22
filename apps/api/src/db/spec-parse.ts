@@ -119,7 +119,7 @@ function generateReviewMarkdown(result: SpecParseResult, matchingResults: MatchR
           const fit = e.fit_score !== null ? `${e.fit_score.toFixed(1)}%` : 'N/A';
           const conf = e.confidence_score !== null ? e.confidence_score.toFixed(2) : 'N/A';
           const dev = `${e.deviations_high_weight}/${e.deviations_medium_weight}/${e.deviations_low_weight}`;
-          const combo = (e.candidate as { is_configured_product?: boolean }).is_configured_product ? ' [COMBO]' : '';
+          const combo = e.candidate.is_configured_product ? ' [COMBO]' : '';
           lines.push(`| ${(e as { rank?: number }).rank ?? '–'} | ${e.candidate.display_name}${combo} | ${fit} | ${conf} | ${e.confidence_band ?? 'N/A'} | ${dev} |`);
         }
       } else {
@@ -194,11 +194,9 @@ async function runMatchingForRequirements(
       .where(eq(matching_requirements.id, reqId))
       .limit(1);
 
-    // pending_characterisation may exist on newer branches; use safe cast
-    type AnyEval = typeof evaluations[number] & { pending_characterisation?: boolean };
-    const pendingChar = (evaluations as AnyEval[]).filter((e) => e.pending_characterisation === true);
+    const pendingChar = evaluations.filter((e) => e.pending_characterisation);
     const assessed = evaluations.filter(
-      (e) => !e.excluded && !(e as AnyEval).pending_characterisation && e.passed_all_hard_gates,
+      (e) => !e.excluded && !e.pending_characterisation && e.passed_all_hard_gates,
     );
     const pending = pendingChar;
     const disqualified = evaluations.filter((e) => !e.excluded && !e.passed_all_hard_gates);

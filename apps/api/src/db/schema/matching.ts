@@ -25,7 +25,18 @@ export type MatchingOperator = (typeof matchingOperators)[number];
 export const gateTypes = ['hard', 'soft', 'conditional'] as const;
 export type GateType = (typeof gateTypes)[number];
 
-export const matchDecisionStatuses = ['evaluated', 'disqualified', 'excluded'] as const;
+export const matchDecisionStatuses = [
+  'evaluated',
+  'disqualified',
+  'excluded',
+  /**
+   * Passed all gates but the requirement specifies a lumen output and this
+   * candidate's delivered lumen is pending characterisation (bare
+   * component_build strip with no configured diffuser combo). No headline fit
+   * score; surfaces in a distinct group below all assessed candidates.
+   */
+  'pending_characterisation',
+] as const;
 export type MatchDecisionStatus = (typeof matchDecisionStatuses)[number];
 
 export const verdictTypes = [
@@ -36,6 +47,12 @@ export const verdictTypes = [
   'gate_pass',
   'gate_fail',
   'gate_unverifiable',
+  /**
+   * Bare component_build strip where delivered lumen output cannot be assessed
+   * (no characterised diffuser transmission). Excluded from fit score;
+   * included in confidence at 0.0 to lower confidence band.
+   */
+  'delivered_pending',
 ] as const;
 export type VerdictType = (typeof verdictTypes)[number];
 

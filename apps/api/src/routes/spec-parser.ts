@@ -82,7 +82,7 @@ specParserRouter.get('/review', async (req: Request, res: Response, next: NextFu
 
         const decisionSummary = {
           evaluated: decisions.filter((d) => d.status === 'evaluated').length,
-          pending_characterisation: decisions.filter((d) => (d.status as string) === 'pending_characterisation').length,
+          pending_characterisation: decisions.filter((d) => d.status === 'pending_characterisation').length,
           disqualified: decisions.filter((d) => d.status === 'disqualified').length,
           excluded: decisions.filter((d) => d.status === 'excluded').length,
         };

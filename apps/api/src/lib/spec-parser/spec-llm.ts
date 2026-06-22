@@ -37,6 +37,7 @@ const MATCHING_ATTR_LIST = [
   '  ik_rating        — IK impact rating (e.g. "IK08", "IK10").',
   '  surge_protection — Surge protection rating in kV (e.g. "10").',
   '  certifications   — Required marks as a comma-separated list (e.g. "CE, RoHS, Civil Defence").',
+  '  dimming          — Control/dimming protocol when MANDATORY for the product (e.g. "DALI", "0-10V", "DMX"). Use ONLY when the spec requires a specific protocol as a pass/fail gate. Do not use for informational notes — use `control_type` instead.',
 ].join('\n');
 
 const INFORMATIONAL_ATTR_LIST = [
@@ -45,7 +46,7 @@ const INFORMATIONAL_ATTR_LIST = [
   '  country_of_origin — Country of origin if stated.',
   '  dimensions       — Physical dimensions or size (e.g. "1200 mm length", "ø95 mm").',
   '  corrosion_class  — Corrosion class if stated (e.g. "C5-M marine").',
-  '  control_type     — Control or dimming method if only informational / not a gate (e.g. "DALI", "0-10V", "On/Off").',
+  '  control_type     — Dimming or control method when informational ONLY (not a mandatory gate requirement). If the spec requires a specific protocol, use `dimming` (matching key) instead.',
   '  notes            — Any other specified requirement that does not map to the above keys.',
 ].join('\n');
 
@@ -85,7 +86,7 @@ ATTRIBUTE EXTRACTION RULES:
 - For IK: the full code (e.g. "IK08").
 - For voltage: include type suffix (e.g. "230V AC", "24V DC").
 - For lumens vs lumens_per_metre: use lumens_per_metre ONLY for flexible tape / LED strip items; use lumens for all other luminaire types.
-- For dimming: if dimming is specified as a GATE REQUIREMENT (mandatory for the product to qualify), set attribute_key="voltage" note that dimming info should go to control_type. If dimming is an informational note about the control system, use control_type (informational key).
+- For dimming: if the spec REQUIRES a specific dimming/control protocol (e.g. "DALI-dimmable", "must support 0-10V"), use attribute_key="dimming" with the protocol name as value (e.g. "DALI", "0-10V"). If dimming is only informational, use attribute_key="control_type".
 - Omit an attribute entirely if it is not explicitly stated. Do not guess.
 - confidence = 1.0: verbatim from a clearly labelled table cell.
   confidence = 0.7–0.9: clearly stated in prose, minor parsing needed.

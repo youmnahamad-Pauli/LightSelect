@@ -51,6 +51,12 @@ export const ATTR_CONFIG: Record<string, AttrConfigEntry> = {
     informational: false,
   },
 
+  dimming: {
+    key: 'dimming', label: 'Control / Dimming Protocol',
+    operator: 'contains_value', gate_type: 'hard', weight: null, target_unit: null,
+    informational: false,
+  },
+
   // ── Soft gate ──────────────────────────────────────────────────────────────
 
   certifications: {

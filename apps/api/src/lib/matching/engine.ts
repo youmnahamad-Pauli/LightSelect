@@ -77,12 +77,15 @@ export async function loadCandidates(db: NodePgDatabase<any>, orgId: string): Pr
       });
     }
 
+    const isConfigured = attrMap.get('is_configured_product')?.attribute_value === 'true';
+
     candidates.push({
       canonical_product_id: p.id,
       display_name: p.display_name,
       luminaire_type: p.luminaire_type,
       approvals_held: p.approvals_held ?? null,
       attributes: attrMap,
+      is_configured_product: isConfigured,
     });
   }
 
@@ -96,6 +99,8 @@ export function runEvaluation(
 ): MatchEvaluation[] {
   const gateAttrs   = requirement.attrs.filter((a) => a.gate_type !== null);
   const scoredAttrs = requirement.attrs.filter((a) => a.gate_type === null);
+  const LUMEN_ATTR_KEYS = new Set(['lumens_per_metre', 'lumens']);
+  const requirementSpecifiesLumen = scoredAttrs.some((a) => LUMEN_ATTR_KEYS.has(a.attribute_key));
   const flags = {
     wind_load:    requirement.flag_wind_load,
     dark_sky:     requirement.flag_dark_sky,
@@ -116,6 +121,8 @@ export function runEvaluation(
         requirement_id: requirement.id,
         excluded: true,
         exclude_reason: `Luminaire type mismatch: product=${candidate.luminaire_type}, required=${requirement.luminaire_type}`,
+        pending_characterisation: false,
+        pending_characterisation_reason: null,
         passed_all_hard_gates: false,
         gate_failures: [],
         soft_gate_comments: [],
@@ -143,6 +150,8 @@ export function runEvaluation(
         requirement_id: requirement.id,
         excluded: false,
         exclude_reason: null,
+        pending_characterisation: false,
+        pending_characterisation_reason: null,
         passed_all_hard_gates: false,
         gate_failures:     collectGateFailures(gateVerdicts),
         soft_gate_comments: collectSoftComments(gateVerdicts),
@@ -164,6 +173,35 @@ export function runEvaluation(
     const scoredVerdicts = evaluateScoredAttributes(scoredAttrs, candidate);
     const allEvidence    = [...gateVerdicts, ...scoredVerdicts];
 
+    // ── 3b. Pending characterisation ─────────────────────────────────────────
+    const candidateHasPendingLumen = requirementSpecifiesLumen &&
+      scoredVerdicts.some((v) => LUMEN_ATTR_KEYS.has(v.attribute_key) && v.verdict === 'delivered_pending');
+
+    if (candidateHasPendingLumen) {
+      evaluations.push({
+        candidate,
+        requirement_id: requirement.id,
+        excluded: false,
+        exclude_reason: null,
+        pending_characterisation: true,
+        pending_characterisation_reason: 'delivered pending — pair with a characterised profile to assess',
+        passed_all_hard_gates: true,
+        gate_failures:     collectGateFailures(gateVerdicts),
+        soft_gate_comments: collectSoftComments(gateVerdicts),
+        fit_score: null,
+        is_fit_capped: false,
+        fit_cap_reason: null,
+        confidence_score: null,
+        confidence_band: null,
+        deviations_high_weight: 0,
+        deviations_medium_weight: 0,
+        deviations_low_weight: 0,
+        comments_count: 0,
+        evidence: allEvidence,
+      });
+      continue;
+    }
+
     // ── 4. Fit ────────────────────────────────────────────────────────────────
     const fitResult = calculateFit(scoredVerdicts);
 
@@ -175,6 +213,8 @@ export function runEvaluation(
       requirement_id: requirement.id,
       excluded: false,
       exclude_reason: null,
+      pending_characterisation: false,
+      pending_characterisation_reason: null,
       passed_all_hard_gates: true,
       gate_failures:     collectGateFailures(gateVerdicts),
       soft_gate_comments: collectSoftComments(gateVerdicts),
@@ -193,7 +233,7 @@ export function runEvaluation(
 
   // ── 6. Rank by fit_score desc (excluded/disqualified get no rank) ──────────
   const ranked = evaluations
-    .filter((e) => !e.excluded && e.passed_all_hard_gates && e.fit_score !== null)
+    .filter((e) => !e.excluded && !e.pending_characterisation && e.passed_all_hard_gates && e.fit_score !== null)
     .sort((a, b) => (b.fit_score ?? 0) - (a.fit_score ?? 0));
 
   ranked.forEach((e, i) => {
@@ -216,7 +256,9 @@ export async function persistResults(
   evaluations: (MatchEvaluation & { rank?: number | null })[],
 ): Promise<void> {
   for (const ev of evaluations) {
-    const status = ev.excluded ? 'excluded' : ev.passed_all_hard_gates ? 'evaluated' : 'disqualified';
+    const status = ev.excluded ? 'excluded'
+      : ev.pending_characterisation ? 'pending_characterisation'
+      : ev.passed_all_hard_gates ? 'evaluated' : 'disqualified';
 
     const [decision] = await db
       .insert(match_decisions)

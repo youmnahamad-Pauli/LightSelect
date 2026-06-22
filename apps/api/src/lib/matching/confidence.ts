@@ -24,9 +24,11 @@ export function calculateConfidence(scoredVerdicts: AttributeVerdict[]): {
     return { confidence_score: 0, confidence_band: 'Low' };
   }
 
-  const scores = applicable.map((v) =>
-    C.PROVENANCE_SCORES[v.provenance as ProvenanceState] ?? C.PROVENANCE_SCORES.extracted,
-  );
+  // delivered_pending counts at 0.0 — lowers confidence band
+  const scores = applicable.map((v) => {
+    if (v.verdict === 'delivered_pending') return 0.0;
+    return C.PROVENANCE_SCORES[v.provenance as ProvenanceState] ?? C.PROVENANCE_SCORES.extracted;
+  });
 
   const avg = scores.reduce((s, p) => s + p, 0) / scores.length;
 
