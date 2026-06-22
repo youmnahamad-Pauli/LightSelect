@@ -131,4 +131,6 @@ export interface SpecParseOptions {
   model?: string;
   /** If provided, restrict to only items whose item_code matches any substring. */
   itemFilter?: string[];
+  /** If provided, associate written requirements with this project. */
+  projectId?: string | null;
 }

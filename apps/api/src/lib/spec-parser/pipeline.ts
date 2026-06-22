@@ -19,7 +19,7 @@ import { writeSpecItem } from './writer';
 import type { SpecParseOptions, SpecParseResult } from './types';
 
 export async function runSpecParser(opts: SpecParseOptions): Promise<SpecParseResult> {
-  const { filePath, orgId, itemFilter } = opts;
+  const { filePath, orgId, itemFilter, projectId } = opts;
   const model = opts.model ?? process.env.EXTRACTION_MODEL ?? 'claude-sonnet-4-6';
 
   // ── Step 1: LLM extraction ────────────────────────────────────────────────
@@ -69,7 +69,7 @@ export async function runSpecParser(opts: SpecParseOptions): Promise<SpecParseRe
 
   const results = [];
   for (const item of mappedItems) {
-    const result = await writeSpecItem(db, item, orgId);
+    const result = await writeSpecItem(db, item, orgId, projectId ?? null);
     results.push(result);
     console.log(`[spec-parser]   wrote: ${item.item_code} → req_id=${result.requirement_id}`);
   }

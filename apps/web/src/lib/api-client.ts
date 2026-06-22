@@ -50,6 +50,9 @@ import type {
   MatchingRequirement,
   MatchDecisionSummary,
   MatchDecisionDetail,
+  ProjectDocument,
+  ProjectDocumentType,
+  SpecParseResult,
 } from '@/types';
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
@@ -448,10 +451,39 @@ export const api = {
       request<ExtractionJob>(`/extraction-jobs/${jobId}`, { token }),
   },
 
+  projectDocuments: {
+    list: (token: string, projectId: string) =>
+      request<ProjectDocument[]>(`/projects/${projectId}/documents`, { token }),
+    upload: async (token: string, projectId: string, formData: FormData): Promise<ProjectDocument> => {
+      const res = await fetch(`${BASE_URL}/projects/${projectId}/documents`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: formData,
+      });
+      const body = await res.json();
+      if (!res.ok || !body.success) throw new Error(body.error?.message ?? 'Upload failed');
+      return body.data as ProjectDocument;
+    },
+    classify: (token: string, docId: string, document_type: ProjectDocumentType) =>
+      request<ProjectDocument>(`/project-documents/${docId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ document_type }),
+        token,
+      }),
+    delete: (token: string, docId: string) =>
+      request<{ deleted: boolean }>(`/project-documents/${docId}`, { method: 'DELETE', token }),
+    parseSpec: (token: string, projectId: string, document_id: string) =>
+      request<SpecParseResult>(`/projects/${projectId}/documents/parse-spec`, {
+        method: 'POST',
+        body: JSON.stringify({ document_id }),
+        token,
+      }),
+  },
+
   matching: {
-    listRequirements: (token: string, orgId: string) =>
+    listRequirements: (token: string, orgId: string, projectId?: string) =>
       request<{ count: number; requirements: MatchingRequirement[] }>(
-        `/matching/requirements?org_id=${orgId}`,
+        `/matching/requirements?org_id=${orgId}${projectId ? `&project_id=${projectId}` : ''}`,
         { token },
       ),
     listDecisions: (token: string, requirementId: string) =>

@@ -20,6 +20,7 @@ export async function writeSpecItem(
   db: PostgresJsDatabase<any>,
   item: MappedSpecItem,
   orgId: string,
+  projectId: string | null = null,
 ): Promise<SpecItemWriteResult> {
   // Delete any existing requirement for this org + item_code (cascade deletes attrs + decisions)
   if (item.item_code) {
@@ -47,6 +48,7 @@ export async function writeSpecItem(
     .insert(matching_requirements)
     .values({
       org_id: orgId,
+      project_id: projectId ?? undefined,
       name: `${item.item_code} — ${item.description.slice(0, 100)}`,
       luminaire_type: luminaireType,
       description: item.description,
