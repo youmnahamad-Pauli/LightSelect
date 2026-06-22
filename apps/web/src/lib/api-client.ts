@@ -54,6 +54,10 @@ import type {
   ProjectDocument,
   ProjectDocumentType,
   SpecParseResult,
+  SubmittalTemplate,
+  SubmittalTemplateWithItems,
+  SubmittalCompletenessResult,
+  SubmittalGateCheckResult,
 } from '@/types';
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
@@ -477,6 +481,72 @@ export const api = {
       request<SpecParseResult>(`/projects/${projectId}/documents/parse-spec`, {
         method: 'POST',
         body: JSON.stringify({ document_id }),
+        token,
+      }),
+  },
+
+  submittalTemplates: {
+    list: (token: string) =>
+      request<SubmittalTemplate[]>('/submittal-templates', { token }),
+    get: (token: string, id: string) =>
+      request<SubmittalTemplateWithItems>(`/submittal-templates/${id}`, { token }),
+    create: (token: string, data: { name: string; consultant?: string | null; description?: string | null }) =>
+      request<SubmittalTemplateWithItems>('/submittal-templates', {
+        method: 'POST',
+        body: JSON.stringify(data),
+        token,
+      }),
+    update: (token: string, id: string, data: { name?: string; consultant?: string | null; description?: string | null; is_active?: boolean }) =>
+      request<SubmittalTemplate>(`/submittal-templates/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify(data),
+        token,
+      }),
+    delete: (token: string, id: string) =>
+      request<{ deleted: boolean }>(`/submittal-templates/${id}`, { method: 'DELETE', token }),
+    addItem: (
+      token: string,
+      templateId: string,
+      data: { document_type: string; label: string; required?: boolean; scope: 'project' | 'per_item'; sort_order?: number },
+    ) =>
+      request<SubmittalTemplateWithItems>(`/submittal-templates/${templateId}/items`, {
+        method: 'POST',
+        body: JSON.stringify(data),
+        token,
+      }),
+    updateItem: (token: string, itemId: string, data: { label?: string; required?: boolean; sort_order?: number }) =>
+      request<unknown>(`/submittal-template-items/${itemId}`, {
+        method: 'PATCH',
+        body: JSON.stringify(data),
+        token,
+      }),
+    deleteItem: (token: string, itemId: string) =>
+      request<{ deleted: boolean }>(`/submittal-template-items/${itemId}`, { method: 'DELETE', token }),
+    assignToProject: (token: string, projectId: string, submittal_template_id: string | null) =>
+      request<Project>(`/projects/${projectId}/submittal-template`, {
+        method: 'PATCH',
+        body: JSON.stringify({ submittal_template_id }),
+        token,
+      }),
+  },
+
+  submittalCompleteness: {
+    get: (token: string, projectId: string) =>
+      request<SubmittalCompletenessResult>(`/projects/${projectId}/submittal-completeness`, { token }),
+    check: (
+      token: string,
+      projectId: string,
+      opts?: { is_override?: boolean; override_reason?: string },
+    ) =>
+      request<SubmittalGateCheckResult>(`/projects/${projectId}/submittal-completeness/check`, {
+        method: 'POST',
+        body: JSON.stringify(opts ?? {}),
+        token,
+      }),
+    linkDocToItem: (token: string, docId: string, item_id: string | null) =>
+      request<ProjectDocument>(`/project-documents/${docId}/item-link`, {
+        method: 'PATCH',
+        body: JSON.stringify({ item_id }),
         token,
       }),
   },

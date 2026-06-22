@@ -45,6 +45,12 @@ export const projects = pgTable('projects', {
   consultant_template_id: uuid('consultant_template_id').references(() => consultant_templates.id, {
     onDelete: 'set null',
   }),
+  /**
+   * Assigned submittal template (document-checklist definition).
+   * No Drizzle FK here — submittal_templates imports projects, so the FK
+   * is enforced at DB level (migration 0012) without a TypeScript import cycle.
+   */
+  submittal_template_id: uuid('submittal_template_id'),
   planned_submittal_date: date('planned_submittal_date'),
   created_by: uuid('created_by').notNull().references(() => users.id),
   created_at: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
@@ -56,6 +62,7 @@ export type NewProject = typeof projects.$inferInsert;
 export type ConsultantTemplate = typeof consultant_templates.$inferSelect;
 
 export const projectDocumentTypes = [
+  'compliance_statement',  // generated: satisfied by resolved proposed product, not an upload
   'spec', 'boq', 'drawing_dwg', 'submittal_template',
   'test_certificate', 'datasheet', 'trade_licence', 'other',
 ] as const;
