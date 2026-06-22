@@ -161,6 +161,14 @@ export interface ComplianceStatement {
   attributes: AttributeEntry[];
   /** Gate-only summary (subset of attributes where is_gate=true). */
   gate_results: GateResult[];
+  /**
+   * Informational attributes captured by the spec parser (body material,
+   * finish, country of origin, etc.). Empty array when the requirement was
+   * not created via the spec parser. The AECOM template uses these to
+   * populate the Specified column for informational rows. The engine does
+   * NOT adjudicate these fields — the Comments/Compliance cell is left blank.
+   */
+  informational_attrs: Array<{ key: string; label: string; value: string }>;
 }
 
 export interface RenderOptions {

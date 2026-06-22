@@ -338,6 +338,12 @@ function renderSection(
 
   const { proposed_product: prod } = statement;
 
+  // Build lookup for spec-parser informational attrs (body material, CoO, etc.)
+  // Used to populate the Specified column for rows the engine doesn't adjudicate.
+  const informationalAttrMap = new Map(
+    (statement.informational_attrs ?? []).map((a) => [a.key, a.value]),
+  );
+
   for (const spec of rows) {
     // Lumen row — custom renderer
     if (spec.special === 'lumen_delivered') {
@@ -347,9 +353,12 @@ function renderSection(
       continue;
     }
 
-    // Resolved specified value (from adjudicated evidence)
+    // Resolved specified value — adjudicated evidence first, then informational fallback.
+    // The informational fallback covers rows like Body Material / Country of Origin that
+    // the engine never adjudicates but the spec parser may have captured.
     const adjAttr = spec.attrKey ? adjAttrMap.get(spec.attrKey) : undefined;
-    const specifiedValue = adjAttr?.specified_value ?? null;
+    const infoLookupKey = spec.productAttr ?? (spec.identity === 'country_of_origin' ? 'country_of_origin' : null);
+    const specifiedValue = adjAttr?.specified_value ?? (infoLookupKey ? informationalAttrMap.get(infoLookupKey) ?? null : null);
 
     // Resolved proposed value — cascade: evidence → identity field → product attr → blank
     let proposedValue: string | null = null;

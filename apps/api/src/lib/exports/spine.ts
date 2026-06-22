@@ -520,6 +520,7 @@ export class MatchDecisionExportSource {
       proposed_product:    proposedProduct,
       attributes,
       gate_results:        gateResults,
+      informational_attrs: (req.informational_attrs as Array<{ key: string; label: string; value: string }> | null) ?? [],
     };
   }
 }
