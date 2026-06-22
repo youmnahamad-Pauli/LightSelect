@@ -15,7 +15,7 @@
  * Results can be persisted to match_decisions + match_evidence via persistResults().
  */
 import { eq } from 'drizzle-orm';
-import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
+import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import {
   matching_requirements, matching_requirement_attrs,
   match_decisions, match_evidence,
@@ -34,7 +34,7 @@ import { calculateConfidence } from './confidence';
 
 /** Load a requirement (with attrs) from the DB. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export async function loadRequirement(db: NodePgDatabase<any>, requirementId: string): Promise<LoadedRequirement | null> {
+export async function loadRequirement(db: PostgresJsDatabase<any>, requirementId: string): Promise<LoadedRequirement | null> {
   const [req] = await db
     .select()
     .from(matching_requirements)
@@ -52,7 +52,7 @@ export async function loadRequirement(db: NodePgDatabase<any>, requirementId: st
 
 /** Load all candidate products for an org (with their attribute values). */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export async function loadCandidates(db: NodePgDatabase<any>, orgId: string): Promise<MatchCandidate[]> {
+export async function loadCandidates(db: PostgresJsDatabase<any>, orgId: string): Promise<MatchCandidate[]> {
   const products = await db
     .select()
     .from(canonical_products)
@@ -77,17 +77,23 @@ export async function loadCandidates(db: NodePgDatabase<any>, orgId: string): Pr
       });
     }
 
+    const isConfigured = attrMap.get('is_configured_product')?.attribute_value === 'true';
+
     candidates.push({
       canonical_product_id: p.id,
       display_name: p.display_name,
       luminaire_type: p.luminaire_type,
       approvals_held: p.approvals_held ?? null,
       attributes: attrMap,
+      is_configured_product: isConfigured,
     });
   }
 
   return candidates;
 }
+
+// Lumen attribute keys — same set as scorer.ts uses for delivered_pending detection.
+const LUMEN_ATTR_KEYS = new Set(['lumens_per_metre', 'lumens']);
 
 /** Run the full evaluation for one requirement against a candidate pool. */
 export function runEvaluation(
@@ -101,6 +107,12 @@ export function runEvaluation(
     dark_sky:     requirement.flag_dark_sky,
     bend_radius:  requirement.flag_bend_radius,
   };
+
+  // Does this requirement specify a lumen output? Needed to decide whether a
+  // delivered_pending verdict triggers pending_characterisation bucketing.
+  const requirementSpecifiesLumen = scoredAttrs.some(
+    (a) => LUMEN_ATTR_KEYS.has(a.attribute_key),
+  );
 
   const evaluations: MatchEvaluation[] = [];
 
@@ -116,6 +128,8 @@ export function runEvaluation(
         requirement_id: requirement.id,
         excluded: true,
         exclude_reason: `Luminaire type mismatch: product=${candidate.luminaire_type}, required=${requirement.luminaire_type}`,
+        pending_characterisation: false,
+        pending_characterisation_reason: null,
         passed_all_hard_gates: false,
         gate_failures: [],
         soft_gate_comments: [],
@@ -143,6 +157,8 @@ export function runEvaluation(
         requirement_id: requirement.id,
         excluded: false,
         exclude_reason: null,
+        pending_characterisation: false,
+        pending_characterisation_reason: null,
         passed_all_hard_gates: false,
         gate_failures:     collectGateFailures(gateVerdicts),
         soft_gate_comments: collectSoftComments(gateVerdicts),
@@ -164,6 +180,42 @@ export function runEvaluation(
     const scoredVerdicts = evaluateScoredAttributes(scoredAttrs, candidate);
     const allEvidence    = [...gateVerdicts, ...scoredVerdicts];
 
+    // ── 3b. Pending-characterisation check ───────────────────────────────────
+    // When the requirement specifies a lumen output AND this candidate emitted
+    // delivered_pending on a lumen attribute, the candidate cannot be assessed
+    // against the requirement's lumen target. It moves into a distinct
+    // 'pending_characterisation' bucket — no headline fit, no rank among
+    // assessed candidates, surfaces below all ranked results.
+    const candidateHasPendingLumen = requirementSpecifiesLumen && scoredVerdicts.some(
+      (v) => LUMEN_ATTR_KEYS.has(v.attribute_key) && v.verdict === 'delivered_pending',
+    );
+
+    if (candidateHasPendingLumen) {
+      evaluations.push({
+        candidate,
+        requirement_id: requirement.id,
+        excluded: false,
+        exclude_reason: null,
+        pending_characterisation: true,
+        pending_characterisation_reason:
+          'delivered pending — pair with a characterised profile to assess',
+        passed_all_hard_gates: true,
+        gate_failures:     collectGateFailures(gateVerdicts),
+        soft_gate_comments: collectSoftComments(gateVerdicts),
+        fit_score:    null,    // no headline fit — lumen unassessable
+        is_fit_capped: false,
+        fit_cap_reason: null,
+        confidence_score: null,
+        confidence_band:  null,
+        deviations_high_weight:   0,
+        deviations_medium_weight: 0,
+        deviations_low_weight:    0,
+        comments_count:           0,
+        evidence: allEvidence,
+      });
+      continue;
+    }
+
     // ── 4. Fit ────────────────────────────────────────────────────────────────
     const fitResult = calculateFit(scoredVerdicts);
 
@@ -175,6 +227,8 @@ export function runEvaluation(
       requirement_id: requirement.id,
       excluded: false,
       exclude_reason: null,
+      pending_characterisation: false,
+      pending_characterisation_reason: null,
       passed_all_hard_gates: true,
       gate_failures:     collectGateFailures(gateVerdicts),
       soft_gate_comments: collectSoftComments(gateVerdicts),
@@ -191,9 +245,14 @@ export function runEvaluation(
     });
   }
 
-  // ── 6. Rank by fit_score desc (excluded/disqualified get no rank) ──────────
+  // ── 6. Rank by fit_score desc ─────────────────────────────────────────────
+  // Excluded, disqualified, and pending_characterisation candidates are NOT
+  // ranked. pending_characterisation candidates surface in a separate group
+  // below all assessed candidates in the results view.
   const ranked = evaluations
-    .filter((e) => !e.excluded && e.passed_all_hard_gates && e.fit_score !== null)
+    .filter(
+      (e) => !e.excluded && !e.pending_characterisation && e.passed_all_hard_gates && e.fit_score !== null,
+    )
     .sort((a, b) => (b.fit_score ?? 0) - (a.fit_score ?? 0));
 
   ranked.forEach((e, i) => {
@@ -212,11 +271,17 @@ export function runEvaluation(
 /** Persist evaluated results to match_decisions + match_evidence tables. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function persistResults(
-  db: NodePgDatabase<any>,
+  db: PostgresJsDatabase<any>,
   evaluations: (MatchEvaluation & { rank?: number | null })[],
 ): Promise<void> {
   for (const ev of evaluations) {
-    const status = ev.excluded ? 'excluded' : ev.passed_all_hard_gates ? 'evaluated' : 'disqualified';
+    const status = ev.excluded
+      ? 'excluded'
+      : ev.pending_characterisation
+        ? 'pending_characterisation'
+        : ev.passed_all_hard_gates
+          ? 'evaluated'
+          : 'disqualified';
 
     const [decision] = await db
       .insert(match_decisions)

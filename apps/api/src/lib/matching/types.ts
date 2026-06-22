@@ -50,6 +50,12 @@ export interface MatchCandidate {
   luminaire_type: string | null;
   approvals_held: string[] | null;
   attributes: Map<string, ResolvedAttributeValue>;
+  /**
+   * True when this candidate is a configured product (strip + profile/diffuser combo).
+   * Bare component_build strips have is_configured_product=false and cannot be assessed
+   * for delivered lumen output → scored lumen verdict becomes 'delivered_pending'.
+   */
+  is_configured_product: boolean;
 }
 
 /** Result of evaluating one requirement constraint against one candidate. */
@@ -74,6 +80,16 @@ export interface MatchEvaluation {
   requirement_id: string;
   excluded: boolean;
   exclude_reason: string | null;
+  /**
+   * True when the requirement specifies a lumen output AND this candidate's
+   * delivered lumen output is pending characterisation (bare component_build
+   * strip, no configured delivery combo). The candidate has full evidence for
+   * non-lumen attributes but NO headline fit score and is NOT ranked among
+   * assessed candidates. It surfaces in a distinct 'pending_characterisation'
+   * group below all assessed candidates.
+   */
+  pending_characterisation: boolean;
+  pending_characterisation_reason: string | null;
   passed_all_hard_gates: boolean;
   gate_failures: { attr: string; reason: string; product_value: string | null; required: string }[];
   soft_gate_comments: { attr: string; reason: string }[];

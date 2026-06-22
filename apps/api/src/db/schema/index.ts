@@ -14,3 +14,4 @@ export * from './exports';
 export * from './catalogue';
 export * from './registry';
 export * from './matching';
+export * from './delivery-combos';

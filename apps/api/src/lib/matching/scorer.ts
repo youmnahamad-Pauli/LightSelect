@@ -112,6 +112,15 @@ export function evaluateScoredAttributes(
           break;
         }
         case 'match_target_lumen': {
+          // Bare component_build strip without a configured diffuser: delivered
+          // lumen output is unknown. Mark as delivered_pending — excluded from fit
+          // score but counted at provenance=0.0 to lower confidence.
+          const archetype = candidate.attributes.get('archetype')?.attribute_value;
+          if (archetype === 'component_build' && !candidate.is_configured_product) {
+            verdict = 'delivered_pending';
+            evidenceNote = `${attr.attribute_key}: delivered lumen output not assessable — bare strip, diffuser transmission not characterised. Source: ${productRaw ?? '(missing)'} ${attr.target_unit ?? ''}`;
+            break;
+          }
           const dimmableRaw  = candidate.attributes.get('dimmable')?.attribute_value ?? null;
           const isDimmable   = dimmableRaw === 'true' ? true : dimmableRaw === 'false' ? false : null;
           const wattsVerdict = verdictCache.get('watts_per_metre') ?? verdictCache.get('watts');
@@ -177,7 +186,7 @@ export function calculateFit(scoredVerdicts: AttributeVerdict[]): {
   comments_count: number;
 } {
   const applicable = scoredVerdicts.filter(
-    (v) => v.verdict !== 'not_applicable' && v.weight !== null,
+    (v) => v.verdict !== 'not_applicable' && v.verdict !== 'delivered_pending' && v.weight !== null,
   );
 
   const totalWeight = applicable.reduce((s, v) => s + (v.weight ?? 0), 0);
@@ -228,6 +237,7 @@ function verdictScore(verdict: VerdictType): number | null {
     case 'comply':  return C.SCORE_COMPLY;
     case 'comment': return C.SCORE_COMMENT;
     case 'deviation': return C.SCORE_DEVIATION;
+    case 'delivered_pending': return null; // excluded from fit; counted in confidence at 0.0
     default: return null; // not_applicable excluded from scoring
   }
 }

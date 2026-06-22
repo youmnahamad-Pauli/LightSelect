@@ -34,7 +34,7 @@ import ExcelJS from 'exceljs';
 import type { ExportTemplate } from './base';
 import type {
   ComplianceStatement, AttributeEntry, RenderOptions,
-  SpineVerdict, LumenRepresentation,
+  SpineVerdict, LumenRepresentation, ComponentIdentity,
 } from '../types';
 
 // ─── AECOM palette ────────────────────────────────────────────────────────────
@@ -151,11 +151,15 @@ function addColHeaders(ws: ExcelJS.Worksheet): void {
   r.getCell(1).alignment = { vertical: 'middle', horizontal: 'left' };
 }
 
+const PENDING_BG = 'FFFFF8E1';  // same amber tint as comment
+const PENDING_FG = 'FFE65100';
+
 function composeAecomText(verdict: SpineVerdict | null, comment: string | null): string {
   switch (verdict) {
     case 'comply':             return 'Comply';
     case 'comply_with_comment': return comment ? `Comply with ${comment}` : 'Comply';
     case 'deviation':          return comment ? `Deviation – ${comment}` : 'Deviation';
+    case 'delivered_pending':  return comment ? `DELIVERED PENDING — ${comment}` : 'DELIVERED PENDING — not assessable';
     default:                   return '';
   }
 }
@@ -170,6 +174,9 @@ function applyVerdictStyle(cell: ExcelJS.Cell, verdict: SpineVerdict | null): vo
   } else if (verdict === 'deviation') {
     cell.fill = solidFill(DEVIATION_BG);
     cell.font = { color: { argb: DEVIATION_FG }, bold: true, size: 9 };
+  } else if (verdict === 'delivered_pending') {
+    cell.fill = solidFill(PENDING_BG);
+    cell.font = { color: { argb: PENDING_FG }, bold: true, size: 9 };
   } else {
     cell.fill = solidFill(IDENTITY_BG);
     cell.font = { color: { argb: NA_FG }, size: 9 };
@@ -222,12 +229,23 @@ function addSpacer(ws: ExcelJS.Worksheet, height = 6): void {
 /**
  * Render the "Lumen Output (DELIVERED)" row with archetype-aware logic.
  *
- * component_build, no diffuser_transmission:
- *   Proposed = "pending diffuser transmission"
- *   Comment  = "Delivered not confirmed — source X lm/m (diffuser transmission not characterized)"
- *   Verdict  = comply_with_comment (amber flag — NOT a source-derived comply/deviation)
+ * delivered_pending (engine verdict from bare component_build strip):
+ *   Proposed = "—" (cannot compute without transmission)
+ *   Comment  = "DELIVERED PENDING — bare strip, diffuser transmission not characterised. Source: X lm/m"
+ *   Verdict  = delivered_pending (bold amber)
  *
- * component_build with transmission, or preassembled, or unknown:
+ * component_build with pending_reason but delivered_lumens=null (spine-derived path):
+ *   Proposed = "pending diffuser transmission"
+ *   Comment  = "Delivered not confirmed — source X lm/m"
+ *   Verdict  = comply_with_comment (amber flag)
+ *
+ * component_build with known delivered (configured product):
+ *   Proposed = "X lm/m (delivered)" with transmission provenance note in comment.
+ *
+ * unknown archetype:
+ *   Show delivered value but append "⚠ archetype unconfirmed — lumen basis unconfirmed".
+ *
+ * preassembled or fallback:
  *   Use delivered_lumens and engine verdict as-is.
  */
 function addLumenRow(
@@ -238,7 +256,17 @@ function addLumenRow(
 ): void {
   const label = 'Lumen Output (DELIVERED)';
 
-  // Pending path: component_build with uncharacterised transmission
+  // Engine-flagged delivered_pending (bare component_build strip through matching)
+  if (adjAttr?.verdict === 'delivered_pending') {
+    const sourceNote = lr?.source_lumens != null
+      ? `Source: ${lr.source_lumens} ${lr.unit ?? 'lm/m'}`
+      : (adjAttr.comment ?? 'diffuser transmission not characterised');
+    addDataRow(ws, label, specifiedValue, '—', 'delivered_pending',
+      `bare strip, diffuser transmission not characterised — ${sourceNote}`, false);
+    return;
+  }
+
+  // Spine-derived pending: component_build without characterised transmission
   if (lr && lr.delivered_lumens === null && lr.pending_reason) {
     const sourceStr = lr.source_lumens !== null
       ? `source ${lr.source_lumens} ${lr.unit}`
@@ -246,7 +274,6 @@ function addLumenRow(
     const comment =
       `Delivered not confirmed — ${sourceStr}; ` +
       `delivered = source × diffuser transmission (${lr.pending_reason})`;
-
     addDataRow(ws, label, specifiedValue, 'pending diffuser transmission',
       'comply_with_comment', comment, false);
     return;
@@ -255,14 +282,31 @@ function addLumenRow(
   // Known delivered path
   if (lr && lr.delivered_lumens !== null) {
     const deliveredStr = `${lr.delivered_lumens} ${lr.unit}`;
-    // Use engine verdict from evidence (adjAttr) if available, else default to comply
-    const verdict  = adjAttr?.verdict  ?? 'comply';
-    const comment  = adjAttr?.comment  ?? null;
+    const verdict = adjAttr?.verdict ?? 'comply';
+    let comment   = adjAttr?.comment ?? null;
+
+    // Unknown archetype: flag unconfirmed basis
+    if (lr.pending_reason && lr.pending_reason.includes('archetype unknown')) {
+      comment = (comment ? comment + ' — ' : '') + '⚠ archetype unconfirmed — lumen basis unconfirmed';
+    }
+
+    // Component_build with known transmission: append provenance note
+    if (lr.diffuser_transmission !== null && lr.transmission_provenance) {
+      const provLabel: Record<string, string> = {
+        combo_tested: 'manufacturer-tested combination',
+        published:    'published diffuser transmission',
+        estimated:    'estimated transmission (placeholder — verify before issue)',
+      };
+      const note = provLabel[lr.transmission_provenance] ?? lr.transmission_provenance;
+      comment = (comment ? comment + '. ' : '') +
+        `Delivered = source × ${(lr.diffuser_transmission * 100).toFixed(0)}% (${note})`;
+    }
+
     addDataRow(ws, label, specifiedValue, deliveredStr, verdict, comment, false);
     return;
   }
 
-  // No lumen representation at all — fall back to raw evidence or blank
+  // No lumen representation — fall back to raw evidence or blank
   if (adjAttr) {
     addDataRow(ws, label, specifiedValue, adjAttr.proposed_value,
       adjAttr.verdict, adjAttr.comment, false);
@@ -274,12 +318,20 @@ function addLumenRow(
 
 // ─── Section renderer ─────────────────────────────────────────────────────────
 
+/**
+ * Render one section (LUMINAIRE / LAMP / CONTROL GEAR).
+ *
+ * @param componentIdentity  For configured products: override identity fields
+ *   (manufacturer, model_code) with this component's data instead of the
+ *   top-level product fields. country_of_origin always reads from prod.
+ */
 function renderSection(
   ws: ExcelJS.Worksheet,
   title: string,
   rows: RowSpec[],
   statement: ComplianceStatement,
   adjAttrMap: Map<string, AttributeEntry>,
+  componentIdentity: ComponentIdentity | null = null,
 ): void {
   addBannerRow(ws, title, SECTION_BG, SECTION_FG, true, 10, 18);
   addColHeaders(ws);
@@ -304,7 +356,14 @@ function renderSection(
     if (adjAttr?.proposed_value) {
       proposedValue = adjAttr.proposed_value;
     } else if (spec.identity) {
-      proposedValue = prod[spec.identity] ?? null;
+      if (spec.identity === 'country_of_origin') {
+        proposedValue = prod.country_of_origin ?? null;
+      } else if (componentIdentity) {
+        // Configured product: use the component's identity (profile or strip)
+        proposedValue = componentIdentity[spec.identity] ?? null;
+      } else {
+        proposedValue = prod[spec.identity] ?? null;
+      }
     } else if (spec.productAttr) {
       proposedValue = prod.raw_attributes[spec.productAttr] ?? null;
     }
@@ -378,14 +437,20 @@ export class AecomXlsxTemplate implements ExportTemplate {
       statement.attributes.map((a) => [a.attribute_key, a]),
     );
 
-    // ── Section 1: LUMINAIRE (FIXTURE) ─────────────────────────────────────
+    const { proposed_product: prod } = statement;
 
-    renderSection(ws, 'LUMINAIRE (FIXTURE)', LUMINAIRE_ROWS, statement, adjAttrMap);
+    // ── Section 1: LUMINAIRE (FIXTURE) ─────────────────────────────────────
+    // For configured products, Section 1 identity = the profile/diffuser component.
+
+    renderSection(ws, 'LUMINAIRE (FIXTURE)', LUMINAIRE_ROWS, statement, adjAttrMap,
+      prod.luminaire_component ?? null);
     addSpacer(ws);
 
     // ── Section 2: LAMP / SOURCE ───────────────────────────────────────────
+    // For configured products, Section 2 identity = the strip/tape component.
 
-    renderSection(ws, 'LAMP / SOURCE', LAMP_ROWS, statement, adjAttrMap);
+    renderSection(ws, 'LAMP / SOURCE', LAMP_ROWS, statement, adjAttrMap,
+      prod.lamp_component ?? null);
     addSpacer(ws);
 
     // ── Section 3: CONTROL GEAR / BALLAST / TRANSFORMER ───────────────────
