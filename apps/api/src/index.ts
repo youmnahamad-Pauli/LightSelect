@@ -79,7 +79,7 @@ app.use('/configured-products', configuredProductsRouter);
 app.use('/ingestion', ingestionRouter);
 app.use('/matching', matchingRouter);
 app.use('/spec-parser', specParserRouter);
-app.use('/projects', projectDocumentsNestedRouter);
+app.use('/projects/:projectId/documents', projectDocumentsNestedRouter);
 app.use('/project-documents', projectDocumentRouter);
 app.use('/submittal-templates', submittalTemplateRouter);
 app.use('/submittal-template-items', submittalTemplateItemRouter);
