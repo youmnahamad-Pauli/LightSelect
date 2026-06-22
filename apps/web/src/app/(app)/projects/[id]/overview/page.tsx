@@ -2,9 +2,10 @@
 
 import Link from 'next/link';
 import { useState } from 'react';
-import { Files, ClipboardList, Package, Pencil, ShieldCheck, AlertTriangle } from 'lucide-react';
+import { Files, ClipboardList, Package, Pencil, ShieldCheck, AlertTriangle, FileCheck } from 'lucide-react';
 import { useProjectContext } from '@/context/project-context';
 import { useChecklist } from '@/hooks/use-checklist';
+import { useSubmittalCompleteness } from '@/hooks/use-submittal-completeness';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge, statusBadgeVariant } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -28,6 +29,7 @@ function EmptyValue() {
 export default function OverviewPage({ params }: { params: { id: string } }) {
   const { project, reload } = useProjectContext();
   const { checklist } = useChecklist(params.id);
+  const { completeness } = useSubmittalCompleteness(params.id);
   const [editOpen, setEditOpen] = useState(false);
 
   const progressPct =
@@ -120,6 +122,17 @@ export default function OverviewPage({ params }: { params: { id: string } }) {
                   : `${checklist.blocking_count} item${checklist.blocking_count !== 1 ? 's' : ''} blocking`
                 : 'Required items status',
               urgent: checklist && !checklist.no_template && !checklist.is_export_ready,
+            },
+            {
+              label: 'Submittal',
+              icon: FileCheck,
+              href: 'submittal',
+              description: completeness && !completeness.no_template
+                ? completeness.is_export_ready
+                  ? 'All items complete'
+                  : `${completeness.summary.blocking_missing} item${completeness.summary.blocking_missing !== 1 ? 's' : ''} missing`
+                : 'Document checklist',
+              urgent: completeness && !completeness.no_template && !completeness.is_export_ready,
             },
             { label: 'Exports', icon: Package, href: 'exports', description: 'Generated packages' },
           ].map(({ label, icon: Icon, href, description, urgent }) => (

@@ -14,6 +14,7 @@ export interface Project {
   notes: string | null;
   status: ProjectStatus;
   consultant_template_id: string | null;
+  submittal_template_id: string | null;
   created_by: string;
   created_at: string;
   updated_at: string;
@@ -745,18 +746,20 @@ export interface ExportBlockedResponse {
 // ─── Project Documents (Workflow Layer) ───────────────────────────────────
 
 export type ProjectDocumentType =
+  | 'compliance_statement'
   | 'spec' | 'boq' | 'drawing_dwg' | 'submittal_template'
   | 'test_certificate' | 'datasheet' | 'trade_licence' | 'other';
 
 export const PROJECT_DOCUMENT_TYPE_LABELS: Record<ProjectDocumentType, string> = {
-  spec:                'Specification',
-  boq:                 'Bill of Quantities',
-  drawing_dwg:         'Drawing (DWG)',
-  submittal_template:  'Submittal Template',
-  test_certificate:    'Test Certificate',
-  datasheet:           'Datasheet',
-  trade_licence:       'Trade Licence',
-  other:               'Other',
+  compliance_statement: 'Compliance Statement',
+  spec:                 'Specification',
+  boq:                  'Bill of Quantities',
+  drawing_dwg:          'Drawing (DWG)',
+  submittal_template:   'Submittal Template',
+  test_certificate:     'Test Certificate',
+  datasheet:            'Datasheet',
+  trade_licence:        'Trade Licence',
+  other:                'Other',
 };
 
 export interface ProjectDocument {
@@ -891,4 +894,97 @@ export interface MatchEvidenceRow {
 export interface MatchDecisionDetail extends MatchDecisionSummary {
   requirement_id: string;
   evidence: MatchEvidenceRow[];
+}
+
+// ─── Submittal Templates (Workflow Layer — INCREMENT 3) ────────────────────
+
+export type SubmittalItemScope = 'project' | 'per_item';
+
+export interface SubmittalTemplate {
+  id: string;
+  organization_id: string | null;
+  name: string;
+  consultant: string | null;
+  description: string | null;
+  is_active: boolean;
+  is_example: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SubmittalTemplateItem {
+  id: string;
+  template_id: string;
+  document_type: string;
+  label: string;
+  required: boolean;
+  scope: SubmittalItemScope;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SubmittalTemplateWithItems extends SubmittalTemplate {
+  items: SubmittalTemplateItem[];
+}
+
+// ─── Submittal Completeness (Workflow Layer — INCREMENT 3) ─────────────────
+
+export interface SubmittalProjectScopeItem {
+  template_item_id: string;
+  document_type: string;
+  label: string;
+  required: boolean;
+  satisfied: boolean;
+  doc_count: number;
+}
+
+export interface SubmittalPerItemDetail {
+  template_item_id: string;
+  document_type: string;
+  label: string;
+  required: boolean;
+  satisfied: boolean;
+  is_compliance_statement: boolean;
+  selection_mode: 'auto' | 'manual' | 'override' | 'needs_review' | 'no_candidates' | null;
+  is_override: boolean;
+  is_stub: boolean;
+  doc_count: number;
+}
+
+export interface SubmittalRequirementRow {
+  requirement_id: string;
+  requirement_name: string;
+  item_code: string | null;
+  luminaire_type: string;
+  items: SubmittalPerItemDetail[];
+  all_required_satisfied: boolean;
+}
+
+export interface SubmittalCompletenessSummary {
+  project_scope_total: number;
+  project_scope_satisfied: number;
+  per_item_total: number;
+  per_item_satisfied: number;
+  override_count: number;
+  stub_count: number;
+  blocking_missing: number;
+}
+
+export interface SubmittalCompletenessResult {
+  project_id: string;
+  template_id: string | null;
+  template_name: string | null;
+  no_template: boolean;
+  is_export_ready: boolean;
+  project_scope_items: SubmittalProjectScopeItem[];
+  per_item_rows: SubmittalRequirementRow[];
+  summary: SubmittalCompletenessSummary;
+}
+
+export interface SubmittalGateCheckResult {
+  is_ready: boolean;
+  override_applied: boolean;
+  missing_items: string[];
+  completeness_summary: SubmittalCompletenessSummary;
 }

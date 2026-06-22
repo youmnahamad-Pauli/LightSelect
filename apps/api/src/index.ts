@@ -27,6 +27,12 @@ import { ingestionRouter } from './routes/ingestion';
 import { matchingRouter } from './routes/matching';
 import { specParserRouter } from './routes/spec-parser';
 import { projectDocumentsNestedRouter, projectDocumentRouter } from './routes/project-documents';
+import {
+  submittalTemplateRouter,
+  submittalTemplateItemRouter,
+  submittalProjectRouter,
+  projectDocItemLinkRouter,
+} from './routes/submittal';
 import { errorHandler } from './middleware/error-handler';
 
 const app = express();
@@ -75,6 +81,10 @@ app.use('/matching', matchingRouter);
 app.use('/spec-parser', specParserRouter);
 app.use('/projects', projectDocumentsNestedRouter);
 app.use('/project-documents', projectDocumentRouter);
+app.use('/submittal-templates', submittalTemplateRouter);
+app.use('/submittal-template-items', submittalTemplateItemRouter);
+app.use('/projects', submittalProjectRouter);
+app.use('/project-documents', projectDocItemLinkRouter);
 
 app.use(errorHandler);
 

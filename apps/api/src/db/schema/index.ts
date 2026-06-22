@@ -15,3 +15,4 @@ export * from './catalogue';
 export * from './registry';
 export * from './matching';
 export * from './delivery-combos';
+export * from './submittal';

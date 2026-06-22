@@ -25,6 +25,7 @@ function formatBytes(bytes: number | null): string {
 
 function docTypeBadgeColor(type: ProjectDocumentType): string {
   const colors: Record<ProjectDocumentType, string> = {
+    compliance_statement: 'bg-indigo-100 text-indigo-700',
     spec:               'bg-blue-100 text-blue-700',
     boq:                'bg-purple-100 text-purple-700',
     drawing_dwg:        'bg-orange-100 text-orange-700',

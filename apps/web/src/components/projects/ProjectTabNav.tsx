@@ -20,6 +20,7 @@ function tabs(id: string): Tab[] {
     { label: 'Spec',            href: `/projects/${id}/spec` },
     { label: 'BOQ',             href: `/projects/${id}/boq` },
     { label: 'Checklist',       href: `/projects/${id}/checklist` },
+    { label: 'Submittal',       href: `/projects/${id}/submittal` },
     { label: 'Package Preview', href: `/projects/${id}/preview` },
     { label: 'Exports',         href: `/projects/${id}/exports` },
   ];
