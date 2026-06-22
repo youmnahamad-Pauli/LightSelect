@@ -12,6 +12,8 @@ interface Tab {
 function tabs(id: string): Tab[] {
   return [
     { label: 'Overview',        href: `/projects/${id}/overview` },
+    { label: 'Documents',       href: `/projects/${id}/documents` },
+    { label: 'Schedule',        href: `/projects/${id}/schedule` },
     { label: 'Categories',      href: `/projects/${id}/categories` },
     { label: 'Files',           href: `/projects/${id}/files` },
     { label: 'Products',        href: `/projects/${id}/products` },

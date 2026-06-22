@@ -742,14 +742,77 @@ export interface ExportBlockedResponse {
   checklist_summary: ChecklistSnapshot;
 }
 
+// ─── Project Documents (Workflow Layer) ───────────────────────────────────
+
+export type ProjectDocumentType =
+  | 'spec' | 'boq' | 'drawing_dwg' | 'submittal_template'
+  | 'test_certificate' | 'datasheet' | 'trade_licence' | 'other';
+
+export const PROJECT_DOCUMENT_TYPE_LABELS: Record<ProjectDocumentType, string> = {
+  spec:                'Specification',
+  boq:                 'Bill of Quantities',
+  drawing_dwg:         'Drawing (DWG)',
+  submittal_template:  'Submittal Template',
+  test_certificate:    'Test Certificate',
+  datasheet:           'Datasheet',
+  trade_licence:       'Trade Licence',
+  other:               'Other',
+};
+
+export interface ProjectDocument {
+  id: string;
+  project_id: string;
+  organization_id: string;
+  uploaded_by: string;
+  original_filename: string;
+  stored_path: string;
+  mime_type: string | null;
+  file_size_bytes: number | null;
+  document_type: ProjectDocumentType;
+  item_id: string | null;
+  product_id: string | null;
+  metadata: Record<string, unknown> | null;
+  uploaded_at: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SpecParseResult {
+  source_file: string;
+  parsed_at: string;
+  org_id: string;
+  items_detected: number;
+  items_written: number;
+  items: {
+    requirement_id: string;
+    item_code: string;
+    luminaire_type: string | null;
+    luminaire_type_confidence: number;
+    matchable_attrs_written: number;
+    informational_attrs_count: number;
+    unknown_keys: string[];
+    low_confidence_flags: string[];
+    needs_review: boolean;
+  }[];
+  llm_meta: {
+    model: string;
+    input_tokens: number;
+    output_tokens: number;
+    elapsed_ms: number;
+  };
+}
+
 // ─── Matching Engine (Phase 3 / Phase 4) ──────────────────────────────────
 
 export interface MatchingRequirement {
   id: string;
   org_id: string;
+  project_id: string | null;
   name: string;
+  item_code: string | null;
   luminaire_type: string;
   description: string | null;
+  informational_attrs: Array<{ key: string; label: string; value: string }> | null;
   flag_wind_load: boolean;
   flag_dark_sky: boolean;
   flag_bend_radius: boolean;

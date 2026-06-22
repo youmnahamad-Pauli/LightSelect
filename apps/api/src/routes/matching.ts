@@ -32,11 +32,15 @@ matchingRouter.get('/requirements', async (req: Request, res: Response, next: Ne
   try {
     const orgId = typeof req.query.org_id === 'string' ? req.query.org_id : null;
     if (!orgId) return res.status(400).json({ error: 'org_id required' });
+    const projectId = typeof req.query.project_id === 'string' ? req.query.project_id : null;
+
+    const conditions = [eq(matching_requirements.org_id, orgId)];
+    if (projectId) conditions.push(eq(matching_requirements.project_id, projectId));
 
     const reqs = await db
       .select()
       .from(matching_requirements)
-      .where(eq(matching_requirements.org_id, orgId));
+      .where(and(...conditions));
 
     return success(res, { count: reqs.length, requirements: reqs });
   } catch (err) { return next(err); }

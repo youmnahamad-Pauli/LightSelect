@@ -57,6 +57,20 @@
       "when": 1782432000000,
       "tag": "0007_spec_parser",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1782518400000,
+      "tag": "0008_project_documents",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1782604800000,
+      "tag": "0009_project_scoped_requirements",
+      "breakpoints": true
     }
   ]
 }

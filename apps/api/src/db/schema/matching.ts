@@ -1,3 +1,4 @@
+import { sql } from 'drizzle-orm';
 import {
   pgTable, uuid, text, real, integer, boolean, jsonb, timestamp, uniqueIndex,
 } from 'drizzle-orm/pg-core';
@@ -101,7 +102,14 @@ export const matching_requirements = pgTable('matching_requirements', {
   flag_bend_radius: boolean('flag_bend_radius').notNull().default(false),
   created_at: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updated_at: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
-});
+}, (table) => ({
+  uqOrgProjectItem: uniqueIndex('uq_req_org_project_item')
+    .on(table.org_id, table.project_id, table.item_code)
+    .where(sql`${table.project_id} IS NOT NULL AND ${table.item_code} IS NOT NULL`),
+  uqOrgItemNoProj: uniqueIndex('uq_req_org_item_noproj')
+    .on(table.org_id, table.item_code)
+    .where(sql`${table.project_id} IS NULL AND ${table.item_code} IS NOT NULL`),
+}));
 
 // ─── matching_requirement_attrs ──────────────────────────────────────────────
 
