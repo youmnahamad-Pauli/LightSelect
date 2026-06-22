@@ -161,6 +161,25 @@ export interface ComplianceStatement {
   attributes: AttributeEntry[];
   /** Gate-only summary (subset of attributes where is_gate=true). */
   gate_results: GateResult[];
+  /**
+   * true when this product was selected as an override (operator chose a
+   * disqualified or pending_characterisation candidate). The AECOM template
+   * must render a visible override notice inside the sheet.
+   */
+  is_override: boolean;
+  /**
+   * Human-readable reason for the override, composed from the actual
+   * decision status and gate failures. Non-null iff is_override=true.
+   * e.g. "disqualified on ip_rating, voltage" or
+   *      "pending_characterisation — delivered output not characterised"
+   */
+  override_reason: string | null;
+  /**
+   * true when no assessable candidate exists for this requirement.
+   * The sheet is a stub: Specified populated from requirement attrs,
+   * Proposed blank, Comments show "No compliant candidate identified".
+   */
+  no_candidate: boolean;
 }
 
 export interface RenderOptions {
