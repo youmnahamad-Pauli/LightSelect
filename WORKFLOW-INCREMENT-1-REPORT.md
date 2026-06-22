@@ -104,3 +104,27 @@ This is separate from the existing `files`/`project_files` system and managed en
 2. **DWG mime types**: browsers report varying MIME types for `.dwg` files (the ALLOWED_MIMES set covers all known variants). If a DWG is rejected, the user can rename to `.dwg` — the filename extension check in `inferDocumentType` catches it.
 3. **Parse-spec path resolution**: the stored path is relative (`project-documents/<orgId>/…`). The endpoint resolves it relative to `process.cwd()/..` (monorepo root). If the API working directory changes this will need adjustment.
 4. **No download endpoint**: project documents don't have a download/stream endpoint in this increment. The `stored_path` field allows one to be added trivially.
+
+---
+
+## Deliberately deferred (Increments 2–4)
+
+- **Matching / selection UI**: running the matching engine per schedule item and reviewing candidates — Increment 2
+- **Document completeness index**: tracking which document types are required vs uploaded per project — Increment 3
+- **Package assembly**: bundling compliance sheets, datasheets, submittals into an export package — Increment 4
+- **DWG take-off**: extracting room/fixture data from DWG drawings — a later module, explicitly out of scope here
+- **Object storage**: files are stored on the local filesystem under `project-documents/`. Production deployments should use S3/GCS/Azure Blob; the `stored_path` field is designed to be a path or object-storage key and the upload/serve code is isolated in `routes/project-documents.ts`
+
+---
+
+## Needs human decision
+
+1. **`submittal_date` field**: the task spec mentions "created/submittal dates" as project model fields. The existing `projects` table has `created_at` but no planned submittal/deadline date. If a `planned_submittal_date` column is needed on the project card, add it as a nullable `date` column in a separate migration.
+
+2. **Re-parse idempotency scope**: the spec parser deletes and recreates requirements by `(org_id, item_code)`. If a project has two specs with overlapping item codes (e.g. two issues of the same schedule), the second parse silently overwrites the first. Decide whether re-parse should be scoped to `(org_id, project_id, item_code)` instead — this is a one-line change in `writer.ts` once the policy is decided.
+
+3. **File storage root**: `storageDirForProject` uses `path.join(process.cwd(), '..', 'project-documents', ...)`. In production this should be replaced with object storage. The swap point is the `storageDirForProject` helper and the path construction in the upload handler — both in `routes/project-documents.ts`.
+
+4. **Document download**: the `stored_path` is persisted but there's no `GET /project-documents/:docId/download` endpoint. Required for the completeness review UI in Increment 3 to let reviewers open uploaded documents.
+
+5. **Spec parse trigger UX**: "Parse spec" is currently a manual button per spec document. Decide whether uploading a file already classified as `spec` should auto-trigger parsing (with confirmation), or keep it manual-only.
