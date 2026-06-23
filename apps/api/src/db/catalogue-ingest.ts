@@ -99,6 +99,7 @@ function generateReviewMarkdown(result: CatalogueIngestionResult): string {
     lines.push(`| Source pages | ${pageStr} |`);
     lines.push(`| Attributes written | ${p.attributes_written} |`);
     lines.push(`| Attributes skipped | ${p.attributes_skipped} |`);
+    lines.push(`| Attributes needing review | ${p.attributes_needing_review} |`);
     lines.push('');
     lines.push('');
   }
@@ -115,9 +116,11 @@ function generateReviewMarkdown(result: CatalogueIngestionResult): string {
   lines.push('');
   lines.push('## Accuracy & Uncertainty Summary');
   lines.push('');
+  const totalNeedingReview = allProducts.reduce((sum, p) => sum + p.attributes_needing_review, 0);
   lines.push(`- **${allProducts.length}** product(s) extracted`);
   lines.push(`- **${noModel}** product(s) have no model code → flagged \`needs_review\``);
   lines.push(`- **${merged}** product(s) merged into an existing canonical record`);
+  lines.push(`- **${totalNeedingReview}** attribute values flagged \`inferred_flagged\` (needs_review)`);
   lines.push(`- Average **${avgAttrs}** attribute values per product`);
   lines.push('');
   lines.push('All values are **extracted** (not confirmed). Confidence scores are stored in');
@@ -129,7 +132,8 @@ function generateReviewMarkdown(result: CatalogueIngestionResult): string {
   lines.push('```sql');
   lines.push('-- See all extracted products from this ingestion run');
   lines.push(`SELECT cp.display_name, cp.review_status, cp.review_notes,`);
-  lines.push(`       pav.attribute_key, pav.attribute_value, pav.confidence_score, pav.conflict_notes`);
+  lines.push(`       pav.attribute_key, pav.attribute_value, pav.confidence_score,`);
+  lines.push(`       pav.resolution_method, pav.source_locator, pav.conflict_notes`);
   lines.push(`FROM canonical_products cp`);
   lines.push(`JOIN product_attribute_values pav ON pav.canonical_product_id = cp.id`);
   lines.push(`WHERE cp.review_notes LIKE 'Ingested from: ${path.basename(result.source_file)}%'`);

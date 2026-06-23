@@ -83,13 +83,33 @@ Each element represents one distinct SKU and must have exactly these fields:
   "model_code":    string|null — the primary order code or model number; null if not present,
   "product_name":  string   — short descriptive name for this product,
   "pages":         [number, number] — 1-indexed first and last page where this product appears,
-  "attributes":    object   — mapping of attribute_name → { "value": string, "confidence": number }
+  "attributes":    object   — mapping of attribute_name → {
+                                "value":             string,
+                                "source_locator":    string|null,
+                                "resolution_method": "table_read"|"legend_decoded"|"inferred_flagged",
+                                "needs_review":      boolean,
+                                "confidence":        number
+                              }
 }
 
 For "attributes":
-- Include ONLY attributes that are explicitly stated in the document. Do not infer or guess.
-- "confidence" is 0.0 (uncertain/inferred) to 1.0 (unambiguous, verbatim from text or table).
-- Omit an attribute entirely if it is not present — do not include it with a null or empty value.
+- Include ONLY attributes whose values you can locate in this document. Do not use training knowledge to fill in values.
+- "value": the extracted value as a string.
+- "source_locator": a precise pointer to where in the document you read this value.
+    Examples: "page 4, specification table, row WKL 3020, column CCT"
+              "page 2, order-code key: '30 = 3000K'"
+              "page 1, document header"
+    Use null only for document-level fields (e.g. manufacturer name on cover page).
+- "resolution_method": how the value was determined:
+    "table_read"        — read verbatim from an explicit table cell, row, or labelled spec entry in this document.
+    "legend_decoded"    — decoded from a model-code legend THAT IS PRINTED IN THIS DOCUMENT and
+                          whose relevant entry you can quote exactly in source_locator.
+    "inferred_flagged"  — you have a plausible value but cannot point to an explicit source in this
+                          document. Set needs_review: true. Use sparingly — prefer omitting the attribute.
+- "needs_review": true when resolution_method is "inferred_flagged"; false otherwise.
+- "confidence": 0.0 (uncertain) to 1.0 (verbatim, unambiguous). Set ≤ 0.5 when needs_review is true.
+- Omit an attribute entirely when you cannot locate it in the document — do not emit it as inferred_flagged
+  unless you have a plausible value worth flagging for human review.
 - If a per-metre value is given (e.g. for LED strips), use watts_per_metre and lumens_per_metre rather than watts and lumens.
 - Do not invent attribute names. Only use the names listed below.
 
@@ -97,10 +117,14 @@ CRITICAL RULE — cct (colour temperature of THIS specific SKU):
   A single SKU has exactly ONE colour temperature. You MUST resolve cct to a single integer in Kelvin.
   Resolution order (use the first that applies):
     1. The specification table or datasheet row for this exact SKU lists a single CCT → use that number.
-    2. The catalogue publishes an order-code legend or key (e.g. "3020 = 3000K, 20W") → decode the
-       CCT from THIS SKU's model code using that legend. Trust the catalogue's own key exactly.
-    3. A combined type/CCT/wattage name (e.g. "WKL 3020" where "30" means 3000K per the legend) →
-       decode as above.
+       Set resolution_method = "table_read". Set source_locator to the exact table reference, e.g.
+       "page 4, specification table, row WKL 3020, column CCT".
+    2. This catalogue prints an order-code legend or key AND that legend entry is visible in this
+       document (e.g. a row "30 = 3000K" or key "3020 = 3000K, 20W") → decode the CCT from THIS
+       SKU's model code using ONLY that printed legend. Quote the exact legend entry in source_locator.
+       Set resolution_method = "legend_decoded".
+    3. If neither applies — DO NOT emit a cct value at all. Do not use training knowledge of
+       naming conventions or common order-code patterns. Omit cct rather than guess.
   NEVER assign the product family's full list of available CCTs to an individual SKU's cct attribute.
   That list belongs in series_cct_options (informational only — see below).
   Output format for cct: a plain integer or integer string, e.g. "3000" not "3000K" not "2700K, 3000K".
@@ -145,15 +169,26 @@ function coerceProduct(raw: RawProductItem): DetectedProduct | null {
     ? raw.attributes as Record<string, unknown>
     : {};
 
+  const VALID_METHODS = ['table_read', 'legend_decoded', 'inferred_flagged'] as const;
+  type ResolutionMethod = (typeof VALID_METHODS)[number];
+
   const attributes: DetectedProduct['attributes'] = {};
   for (const [key, val] of Object.entries(rawAttrs)) {
     if (!VALID_ATTRIBUTE_NAMES.has(key)) continue;
     if (typeof val !== 'object' || val === null) continue;
     const v = val as Record<string, unknown>;
     if (typeof v.value !== 'string' || typeof v.confidence !== 'number') continue;
+    const resolution_method: ResolutionMethod =
+      typeof v.resolution_method === 'string' &&
+      (VALID_METHODS as readonly string[]).includes(v.resolution_method)
+        ? (v.resolution_method as ResolutionMethod)
+        : 'table_read';
     attributes[key] = {
       value: v.value,
       confidence: Math.min(1, Math.max(0, v.confidence)),
+      source_locator: typeof v.source_locator === 'string' ? v.source_locator : null,
+      resolution_method,
+      needs_review: resolution_method === 'inferred_flagged' || v.needs_review === true,
     };
   }
 

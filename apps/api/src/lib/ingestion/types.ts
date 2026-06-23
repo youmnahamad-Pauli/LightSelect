@@ -15,8 +15,17 @@ export interface DetectedProduct {
   product_name: string;
   /** 1-indexed page range [first, last] where this product's data appears. */
   pages: [number, number];
-  /** Extracted attributes: attribute_name → { value, confidence }. */
-  attributes: Record<string, { value: string; confidence: number }>;
+  /** Extracted attributes: attribute_name → grounded value with provenance. */
+  attributes: Record<string, {
+    value: string;
+    confidence: number;
+    /** Pointer to where in the document this value was read (page, table, row). */
+    source_locator: string | null;
+    /** How the value was resolved. */
+    resolution_method: 'table_read' | 'legend_decoded' | 'inferred_flagged';
+    /** True when resolution_method is 'inferred_flagged' — value uncertain, needs human check. */
+    needs_review: boolean;
+  }>;
 }
 
 /** Raw response from the catalogue detection LLM call. */
@@ -42,6 +51,8 @@ export interface IngestionProductResult {
   attributes_written: number;
   /** Skipped because the attribute name was not in the standard schema. */
   attributes_skipped: number;
+  /** Attributes emitted with resolution_method = 'inferred_flagged'; need human review. */
+  attributes_needing_review: number;
   /** True if this matched an existing canonical product (dedup merge). */
   merged_into_existing: boolean;
 }
