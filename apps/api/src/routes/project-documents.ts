@@ -227,6 +227,47 @@ projectDocumentsNestedRouter.post(
   },
 );
 
+// GET /project-documents/:docId/download — stream stored file
+projectDocumentRouter.get(
+  '/:docId/download',
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const orgId = getOrgId(req);
+      const { docId } = req.params;
+
+      const [doc] = await db
+        .select()
+        .from(project_documents)
+        .where(
+          and(
+            eq(project_documents.id, docId),
+            eq(project_documents.organization_id, orgId),
+          ),
+        )
+        .limit(1);
+      if (!doc) throw new AppError(404, 'Document not found');
+
+      const absPath = path.join(process.cwd(), '..', doc.stored_path);
+      if (!fs.existsSync(absPath)) {
+        throw new AppError(404, 'Document file not found on disk');
+      }
+
+      const safeFilename = encodeURIComponent(doc.original_filename).replace(/'/g, '%27');
+      res.setHeader('Content-Type', doc.mime_type ?? 'application/octet-stream');
+      res.setHeader(
+        'Content-Disposition',
+        `attachment; filename="${safeFilename}"; filename*=UTF-8''${safeFilename}`,
+      );
+      res.setHeader('Content-Length', String(fs.statSync(absPath).size));
+      res.setHeader('Cache-Control', 'private, no-cache');
+
+      fs.createReadStream(absPath).pipe(res);
+    } catch (err) {
+      return next(err);
+    }
+  },
+);
+
 // PATCH /project-documents/:docId — reclassify a document
 projectDocumentRouter.patch(
   '/:docId',

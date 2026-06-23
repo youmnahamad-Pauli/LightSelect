@@ -841,6 +841,8 @@ export interface SelectionState {
   resolved_rank: number | null;
   resolved_status: string | null;
   is_override: boolean;
+  data_quality: 'verified' | 'estimated_placeholder';
+  is_placeholder: boolean;
 }
 
 export type MatchDecisionStatus = 'evaluated' | 'disqualified' | 'pending_characterisation' | 'excluded';

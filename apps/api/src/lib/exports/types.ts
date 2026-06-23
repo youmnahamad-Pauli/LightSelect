@@ -18,6 +18,24 @@
 export type SpineVerdict = 'comply' | 'comply_with_comment' | 'deviation' | 'delivered_pending';
 
 /**
+ * Informational specified attribute captured by the spec parser.
+ * Not evaluated by the matching engine — used for the export Specified column only.
+ */
+export interface InformationalAttr {
+  key: string;
+  label: string;
+  value: string;
+}
+
+/**
+ * Reliability of the product data used to compute the compliance assessment.
+ *   verified             — measured or published by manufacturer.
+ *   estimated_placeholder — key value(s) estimated (e.g. diffuser transmission); output not verified.
+ *   uncharacterised      — archetype unknown or critical value absent; basis unconfirmed.
+ */
+export type DataQuality = 'verified' | 'estimated_placeholder' | 'uncharacterised';
+
+/**
  * Identity fields for one physical component within a configured product.
  *   luminaire_component — the profile/diffuser (AECOM Section 1: LUMINAIRE)
  *   lamp_component      — the LED strip/tape  (AECOM Section 2: LAMP / SOURCE)
@@ -119,6 +137,12 @@ export interface ProposedProduct {
    * Templates can reach any attribute not surfaced by adjudicated evidence.
    */
   raw_attributes: Record<string, string | null>;
+  /**
+   * Reliability signal for this product's assessment.
+   * 'estimated_placeholder' means one or more critical values are estimated,
+   * not measured — templates must render a prominent warning.
+   */
+  data_quality: DataQuality;
 }
 
 /**
@@ -180,6 +204,17 @@ export interface ComplianceStatement {
    * Proposed blank, Comments show "No compliant candidate identified".
    */
   no_candidate: boolean;
+  /**
+   * true when proposed_product.data_quality = 'estimated_placeholder'.
+   * Convenience flag so templates don't have to inspect the nested field.
+   * Templates must render a prominent data-quality warning when true.
+   */
+  is_placeholder: boolean;
+  /**
+   * Informational specified attributes from the spec parser (not engine-evaluated).
+   * Used to populate the Specified column for standing rows that lack adjudicated evidence.
+   */
+  informational_attrs: InformationalAttr[];
 }
 
 export interface RenderOptions {
