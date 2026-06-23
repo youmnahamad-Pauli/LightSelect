@@ -165,6 +165,37 @@ ${ATTRIBUTE_LIST}
 Products to detect: every item that has its own model code, order code, or distinct specification row.
 Different CCT or wattage options with separate model codes must each be a separate product entry.`;
 
+// ─── Provenance validation ─────────────────────────────────────────────────
+
+/**
+ * Returns true only when the source_locator references an actual printed
+ * legend or order-code key table in the document — not merely the location
+ * of the model code that was decoded.
+ *
+ * Used in two places:
+ *   1. coerceProduct() — at LLM parse time, before data reaches the writer.
+ *   2. registry-writer.ts — at DB write time, as a hard gate regardless of
+ *      how the DetectedProduct was constructed.
+ */
+export function isLegitLegendSourceLocator(sl: string | null): boolean {
+  if (!sl) return false;
+  const lower = sl.toLowerCase();
+  return (
+    lower.includes('legend') ||
+    lower.includes('order-code key') ||
+    lower.includes('order code key') ||
+    lower.includes('code key') ||
+    lower.includes('key table') ||
+    lower.includes('key box') ||
+    lower.includes(' key,') ||
+    lower.includes(' key:') ||
+    lower.includes(' key ') ||
+    // Quoted mapping patterns like "entry: '/940 = 4000K'"
+    /entry:\s*['"]/.test(lower) ||
+    /entry:\s+[/']/.test(lower)
+  );
+}
+
 // ─── LLM client ────────────────────────────────────────────────────────────
 
 interface RawProductItem {
@@ -190,27 +221,6 @@ function coerceProduct(raw: RawProductItem): DetectedProduct | null {
 
   const VALID_METHODS = ['table_read', 'legend_decoded', 'inferred_flagged'] as const;
   type ResolutionMethod = (typeof VALID_METHODS)[number];
-
-  // legend_decoded is only valid when source_locator references an actual printed legend/key
-  // in the document. If the model cites a model code location (not a legend), downgrade.
-  function isLegitLegendSourceLocator(sl: string | null): boolean {
-    if (!sl) return false;
-    const lower = sl.toLowerCase();
-    return (
-      lower.includes('legend') ||
-      lower.includes('order-code key') ||
-      lower.includes('order code key') ||
-      lower.includes('code key') ||
-      lower.includes('key table') ||
-      lower.includes('key box') ||
-      lower.includes(' key,') ||
-      lower.includes(' key:') ||
-      lower.includes(' key ') ||
-      // Quoted mapping patterns like "entry: '/940 = 4000K'"
-      /entry:\s*['"]/.test(lower) ||
-      /entry:\s+[/']/.test(lower)
-    );
-  }
 
   const attributes: DetectedProduct['attributes'] = {};
   for (const [key, val] of Object.entries(rawAttrs)) {

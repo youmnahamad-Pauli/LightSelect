@@ -42,7 +42,7 @@ import {
 import type { IngestionProductResult } from './types';
 import type { DetectedProduct } from './types';
 import { buildDedupKey, buildDisplayName, buildSoftHint, normalizeForKey } from './normalise';
-import { VALID_ATTRIBUTE_NAMES } from './catalogue-llm';
+import { VALID_ATTRIBUTE_NAMES, isLegitLegendSourceLocator } from './catalogue-llm';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function writeProductToRegistry(params: {
@@ -157,9 +157,24 @@ export async function writeProductToRegistry(params: {
     // series_cct_options is informational and never gets a cct_kelvin.
     const cctKelvin = attrKey === 'cct' ? parseSingleCctKelvin(attrData.value) : null;
     const sourceLocator = attrData.source_locator ?? null;
-    const resolutionMethod = attrData.resolution_method;
 
-    if (attrData.needs_review) attributesNeedingReview++;
+    // Hard gate: legend_decoded is only valid when source_locator references a printed
+    // legend/key in the document. Downgrade here regardless of how the DetectedProduct
+    // was constructed — this is the last line of defence before the DB write.
+    let resolutionMethod = attrData.resolution_method;
+    let needsReview = attrData.needs_review;
+    let confidenceScore = attrData.confidence;
+    if (resolutionMethod === 'legend_decoded' && !isLegitLegendSourceLocator(sourceLocator)) {
+      console.warn(
+        `[registry-writer] legend_decoded guard: ${attrKey} source_locator does not reference ` +
+        `a printed legend ("${sourceLocator ?? 'null'}"). Downgrading to inferred_flagged.`,
+      );
+      resolutionMethod = 'inferred_flagged';
+      needsReview = true;
+      confidenceScore = Math.min(0.5, confidenceScore);
+    }
+
+    if (needsReview) attributesNeedingReview++;
 
     if (existing.length > 0) {
       // Never overwrite a confirmed value with an extracted one
@@ -173,7 +188,7 @@ export async function writeProductToRegistry(params: {
         .set({
           attribute_value: attrData.value,
           value_state: 'extracted',
-          confidence_score: parseFloat(attrData.confidence.toFixed(3)),
+          confidence_score: parseFloat(confidenceScore.toFixed(3)),
           source_product_id: null,
           conflict_notes: `Source: ${pageRef}`,
           cct_kelvin: cctKelvin,
@@ -189,7 +204,7 @@ export async function writeProductToRegistry(params: {
         attribute_value: attrData.value,
         value_state: 'extracted',
         source_product_id: null,
-        confidence_score: parseFloat(attrData.confidence.toFixed(3)),
+        confidence_score: parseFloat(confidenceScore.toFixed(3)),
         conflict_notes: `Source: ${pageRef}`,
         cct_kelvin: cctKelvin,
         source_locator: sourceLocator,
