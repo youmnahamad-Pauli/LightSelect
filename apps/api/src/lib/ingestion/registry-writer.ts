@@ -12,7 +12,7 @@
  */
 
 import path from 'path';
-import { eq, and } from 'drizzle-orm';
+import { eq, and, ne } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 
 /**
@@ -134,6 +134,7 @@ export async function writeProductToRegistry(params: {
 
   let attributesWritten = 0;
   let attributesSkipped = 0;
+  let attributesNeedingReview = 0;
 
   for (const [attrKey, attrData] of Object.entries(product.attributes)) {
     if (!VALID_ATTRIBUTE_NAMES.has(attrKey)) {
@@ -155,6 +156,10 @@ export async function writeProductToRegistry(params: {
     // For CCT attributes, attempt to resolve a single integer Kelvin value.
     // series_cct_options is informational and never gets a cct_kelvin.
     const cctKelvin = attrKey === 'cct' ? parseSingleCctKelvin(attrData.value) : null;
+    const sourceLocator = attrData.source_locator ?? null;
+    const resolutionMethod = attrData.resolution_method;
+
+    if (attrData.needs_review) attributesNeedingReview++;
 
     if (existing.length > 0) {
       // Never overwrite a confirmed value with an extracted one
@@ -172,6 +177,8 @@ export async function writeProductToRegistry(params: {
           source_product_id: null,
           conflict_notes: `Source: ${pageRef}`,
           cct_kelvin: cctKelvin,
+          source_locator: sourceLocator,
+          resolution_method: resolutionMethod,
           updated_at: new Date(),
         })
         .where(eq(product_attribute_values.id, existing[0].id));
@@ -185,9 +192,27 @@ export async function writeProductToRegistry(params: {
         confidence_score: parseFloat(attrData.confidence.toFixed(3)),
         conflict_notes: `Source: ${pageRef}`,
         cct_kelvin: cctKelvin,
+        source_locator: sourceLocator,
+        resolution_method: resolutionMethod,
       });
     }
     attributesWritten++;
+  }
+
+  // If any attribute is flagged for review, upgrade the canonical product's status.
+  // Never downgrade a 'confirmed' record.
+  let effectiveReviewStatus: 'auto_merged' | 'needs_review' = reviewStatus;
+  if (attributesNeedingReview > 0) {
+    effectiveReviewStatus = 'needs_review';
+    await db
+      .update(canonical_products)
+      .set({ review_status: 'needs_review' })
+      .where(
+        and(
+          eq(canonical_products.id, canonicalId),
+          ne(canonical_products.review_status, 'confirmed'),
+        ),
+      );
   }
 
   return {
@@ -195,10 +220,11 @@ export async function writeProductToRegistry(params: {
     manufacturer: product.manufacturer,
     model_code: product.model_code,
     display_name: displayName,
-    review_status: reviewStatus,
+    review_status: effectiveReviewStatus,
     pages: product.pages,
     attributes_written: attributesWritten,
     attributes_skipped: attributesSkipped,
+    attributes_needing_review: attributesNeedingReview,
     merged_into_existing: mergedIntoExisting,
   };
 }

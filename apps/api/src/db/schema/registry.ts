@@ -190,6 +190,20 @@ export const product_attribute_values = pgTable(
      * where CCT was stored as a multi-value list (those need re-ingestion).
      */
     cct_kelvin: integer('cct_kelvin'),
+    /**
+     * Precise pointer to where in the source document this value was read.
+     * e.g. "page 4, specification table, row WKL 3020, column CCT"
+     *   or "page 2, order-code legend: '30=3000K'"
+     * Null for manufacturer name and other document-level fields.
+     */
+    source_locator: text('source_locator'),
+    /**
+     * How the value was resolved by the extraction model.
+     * table_read       — verbatim from an explicit table cell or labelled spec row.
+     * legend_decoded   — decoded from a model-code legend printed in this document.
+     * inferred_flagged — no explicit source found; value is uncertain, needs review.
+     */
+    resolution_method: text('resolution_method'),
     created_at: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updated_at: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },

@@ -68,6 +68,8 @@ ingestionRouter.get('/review', async (req: Request, res: Response, next: NextFun
             value_state: product_attribute_values.value_state,
             confidence_score: product_attribute_values.confidence_score,
             conflict_notes: product_attribute_values.conflict_notes,
+            source_locator: product_attribute_values.source_locator,
+            resolution_method: product_attribute_values.resolution_method,
           })
           .from(product_attribute_values)
           .where(eq(product_attribute_values.canonical_product_id, p.id))
