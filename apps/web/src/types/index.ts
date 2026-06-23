@@ -1029,3 +1029,29 @@ export interface PackageGenerateResult {
   zip_base64: string | null;
   zip_filename: string | null;
 }
+
+// ─── Conversational Capstone ────────────────────────────────────────────────
+
+export interface ConversationMessage {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
+export interface FileRef {
+  label: string;
+  ref: string;
+  filename?: string;
+  note?: string | null;
+}
+
+export interface ToolTraceEntry {
+  tool: string;
+  args: Record<string, unknown>;
+  result_summary: string;
+}
+
+export interface ConversationResult {
+  answer: string;
+  file_refs: FileRef[];
+  tool_trace: ToolTraceEntry[];
+}
