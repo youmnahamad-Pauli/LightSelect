@@ -35,6 +35,7 @@ import type { ExportTemplate } from './base';
 import type {
   ComplianceStatement, AttributeEntry, RenderOptions,
   SpineVerdict, LumenRepresentation, ComponentIdentity,
+  InformationalAttr,
 } from '../types';
 
 // ─── AECOM palette ────────────────────────────────────────────────────────────
@@ -54,10 +55,12 @@ const DEVIATION_BG = 'FFFDE8E8';
 const DEVIATION_FG = 'FFC62828';
 const NA_FG        = 'FF9E9E9E';
 const ROW_BORDER   = 'FFE0E0E0';
-const OVERRIDE_BG  = 'FFFCE4EC';   // red-50 — override notice
-const OVERRIDE_FG  = 'FFC62828';   // red-800
-const NO_CAND_BG   = 'FFF5F5F5';   // grey-100 — no-candidate stub notice
-const NO_CAND_FG   = 'FF616161';   // grey-700
+const OVERRIDE_BG    = 'FFFCE4EC';   // red-50 — override notice
+const OVERRIDE_FG    = 'FFC62828';   // red-800
+const NO_CAND_BG     = 'FFF5F5F5';   // grey-100 — no-candidate stub notice
+const NO_CAND_FG     = 'FF616161';   // grey-700
+const PLACEHOLDER_BG = 'FFFFF3E0';   // amber-50 — estimated placeholder warning
+const PLACEHOLDER_FG = 'FFE65100';   // deep-orange-800
 
 // ─── Row spec ─────────────────────────────────────────────────────────────────
 
@@ -67,6 +70,8 @@ const NO_CAND_FG   = 'FF616161';   // grey-700
  *   attrKey      — look up adjudicated evidence by this key for Specified + Proposed + verdict.
  *   productAttr  — fallback product_attribute_values key for Proposed when evidence absent.
  *   identity     — pull Proposed from a named field on ProposedProduct (overrides productAttr).
+ *   infoAttrKey  — key in informational_attrs to use for the Specified column when no
+ *                  adjudicated evidence exists for this row. Never produces a verdict.
  *   special      — custom rendering logic keyed by name.
  *   bold         — bold the label (used for gate attributes).
  */
@@ -74,6 +79,7 @@ interface RowSpec {
   label: string;
   attrKey?: string;
   productAttr?: string;
+  infoAttrKey?: string;
   identity?: 'manufacturer' | 'model_code' | 'country_of_origin';
   special?: 'lumen_delivered';
   bold?: boolean;
@@ -83,15 +89,16 @@ const LUMINAIRE_ROWS: RowSpec[] = [
   { label: 'Manufacturer',                   identity: 'manufacturer' },
   { label: 'Manufacturer Product Reference', identity: 'model_code' },
   { label: 'IP Rating',                      attrKey: 'ip_rating',            bold: true },
-  { label: 'IK Rating',                      productAttr: 'ik_rating' },
-  { label: 'Mounting Type',                  attrKey: 'mounting',             productAttr: 'mounting' },
-  { label: 'Body Material',                  productAttr: 'body_material' },
-  { label: 'Reflector Material',             productAttr: 'reflector_material' },
-  { label: 'Body Colour',                    productAttr: 'body_colour' },
+  { label: 'IK Rating',                      productAttr: 'ik_rating',        infoAttrKey: 'ik_rating' },
+  { label: 'Mounting Type',                  attrKey: 'mounting',             productAttr: 'mounting',   infoAttrKey: 'mounting' },
+  { label: 'Body Material',                  productAttr: 'body_material',    infoAttrKey: 'body_material' },
+  { label: 'Reflector Material',             productAttr: 'reflector_material', infoAttrKey: 'reflector_material' },
+  // infoAttrKey 'finish' maps the spec's surface-finish field to Body Colour
+  { label: 'Body Colour',                    productAttr: 'body_colour',      infoAttrKey: 'finish' },
   { label: 'Country of Origin',              identity: 'country_of_origin' },
-  { label: 'Operating Temperature',          attrKey: 'operating_temperature', productAttr: 'operating_temperature' },
-  { label: 'Physical Dimensions',            attrKey: 'dimensions',            productAttr: 'dimensions' },
-  { label: 'Accessories',                    productAttr: 'accessories' },
+  { label: 'Operating Temperature',          attrKey: 'operating_temperature', productAttr: 'operating_temperature', infoAttrKey: 'operating_temperature' },
+  { label: 'Physical Dimensions',            attrKey: 'dimensions',            productAttr: 'dimensions',            infoAttrKey: 'dimensions' },
+  { label: 'Accessories',                    productAttr: 'accessories',       infoAttrKey: 'accessories' },
 ];
 
 const LAMP_ROWS: RowSpec[] = [
@@ -342,6 +349,11 @@ function renderSection(
 
   const { proposed_product: prod } = statement;
 
+  // Build a lookup for informational attrs (from the spec parser, not engine-evaluated)
+  const infoAttrMap = new Map<string, InformationalAttr>(
+    (statement.informational_attrs ?? []).map((a) => [a.key, a]),
+  );
+
   for (const spec of rows) {
     // Lumen row — custom renderer
     if (spec.special === 'lumen_delivered') {
@@ -351,9 +363,13 @@ function renderSection(
       continue;
     }
 
-    // Resolved specified value (from adjudicated evidence)
+    // Resolved specified value cascade:
+    //   1. Adjudicated evidence (engine-evaluated requirement attr)
+    //   2. Informational attr from spec parser (infoAttrKey maps row → attr key)
+    //   3. Blank (row had no requirement for this attribute)
     const adjAttr = spec.attrKey ? adjAttrMap.get(spec.attrKey) : undefined;
-    const specifiedValue = adjAttr?.specified_value ?? null;
+    const infoAttr = spec.infoAttrKey ? infoAttrMap.get(spec.infoAttrKey) : undefined;
+    const specifiedValue = adjAttr?.specified_value ?? infoAttr?.value ?? null;
 
     // Resolved proposed value — cascade: evidence → identity field → product attr → blank
     let proposedValue: string | null = null;
@@ -372,6 +388,7 @@ function renderSection(
       proposedValue = prod.raw_attributes[spec.productAttr] ?? null;
     }
 
+    // Verdict: only from adjudicated evidence. Informational-only rows are neutral (no verdict).
     const verdict = adjAttr?.verdict ?? null;
     const comment = adjAttr?.comment ?? null;
     const bold    = spec.bold ?? false;
@@ -418,7 +435,7 @@ export class AecomXlsxTemplate implements ExportTemplate {
       `LIGHTING CONSULTANT: ${metadata.consultant}   |   REF: ${metadata.ref}   REV. ${metadata.revision}`,
       DARK_HDR_BG, DARK_HDR_FG, false, 10, 14);
 
-    // ── Override / no-candidate notice (immediately after header) ─────────
+    // ── Override / no-candidate / placeholder notices (immediately after header) ─
 
     if (statement.is_override) {
       const reason = statement.override_reason ?? 'override — review required';
@@ -434,6 +451,16 @@ export class AecomXlsxTemplate implements ExportTemplate {
         ws,
         'NO COMPLIANT CANDIDATE IDENTIFIED — proposed product column is blank pending further supply-chain review',
         NO_CAND_BG, NO_CAND_FG, true, 10, 22,
+      );
+    }
+
+    if (statement.is_placeholder) {
+      addBannerRow(
+        ws,
+        '⚠  DATA QUALITY — PLACEHOLDER PRODUCT: key transmission value estimated, not measured. ' +
+        'Delivered lumen output is indicative only. Verify diffuser transmission from manufacturer ' +
+        'characterisation before issue for construction.',
+        PLACEHOLDER_BG, PLACEHOLDER_FG, true, 10, 30,
       );
     }
 

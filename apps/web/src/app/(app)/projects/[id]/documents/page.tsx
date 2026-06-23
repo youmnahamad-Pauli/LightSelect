@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { Upload, FileText, Trash2, Tag, Play, CheckCircle, AlertCircle, File } from 'lucide-react';
+import { Upload, FileText, Trash2, Tag, Play, CheckCircle, AlertCircle, File, Download } from 'lucide-react';
 import { useAuth } from '@/context/auth-context';
 import { api, ApiError } from '@/lib/api-client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -102,6 +102,15 @@ export default function ProjectDocumentsPage({ params }: { params: { id: string 
       setDocs((prev) => prev.filter((d) => d.id !== docId));
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Delete failed');
+    }
+  }
+
+  async function handleDownload(doc: ProjectDocument) {
+    if (!token) return;
+    try {
+      await api.projectDocuments.download(token, doc.id, doc.original_filename);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Download failed');
     }
   }
 
@@ -253,6 +262,15 @@ export default function ProjectDocumentsPage({ params }: { params: { id: string 
                         {parsing === doc.id ? 'Parsing…' : 'Parse spec'}
                       </Button>
                     )}
+
+                    {/* Download */}
+                    <button
+                      className="p-1 text-slate-400 hover:text-brand"
+                      onClick={() => handleDownload(doc)}
+                      title="Download document"
+                    >
+                      <Download className="h-4 w-4" />
+                    </button>
 
                     {/* Delete */}
                     <button

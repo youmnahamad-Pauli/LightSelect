@@ -23,6 +23,7 @@ import type {
   ComplianceStatement, StatementMetadata, ProposedProduct,
   AttributeEntry, GateResult, SpineVerdict,
   ProductArchetype, LumenRepresentation, ComponentIdentity,
+  DataQuality, InformationalAttr,
 } from './types';
 
 // ─── Attribute label map ──────────────────────────────────────────────────────
@@ -381,6 +382,9 @@ export class MatchDecisionExportSource {
     let isConfiguredProduct = false;
     let luminaireComponent: ComponentIdentity | null = null;
     let lampComponent: ComponentIdentity | null = null;
+    // Captured from delivery_combos for placeholder detection (step 9)
+    let comboTransmissionProvenance: string | null = null;
+    let comboNotes: string | null = null;
 
     if (productAttrMap.get('is_configured_product') === 'true') {
       isConfiguredProduct = true;
@@ -392,6 +396,9 @@ export class MatchDecisionExportSource {
         .limit(1);
 
       if (configRow) {
+        comboTransmissionProvenance = configRow.transmission_provenance ?? null;
+        comboNotes = configRow.notes ?? null;
+
         luminaireComponent = {
           manufacturer: configRow.profile_manufacturer,
           model_code:   configRow.profile_model_code,
@@ -506,6 +513,17 @@ export class MatchDecisionExportSource {
       rawAttributes[k] = v;
     }
 
+    // Data quality: estimated_placeholder when transmission was estimated (not measured)
+    // or the delivery combo carries an explicit PLACEHOLDER note.
+    const isPlaceholder =
+      comboTransmissionProvenance === 'estimated' ||
+      productAttrMap.get('transmission_provenance') === 'estimated' ||
+      (comboNotes?.startsWith('PLACEHOLDER') ?? false);
+
+    const dataQuality: DataQuality = isPlaceholder
+      ? 'estimated_placeholder'
+      : archetype === 'unknown' ? 'uncharacterised' : 'verified';
+
     const proposedProduct: ProposedProduct = {
       display_name:      product?.display_name ?? decision.canonical_product_id,
       manufacturer,
@@ -519,6 +537,7 @@ export class MatchDecisionExportSource {
       luminaire_component:   luminaireComponent,
       lamp_component:        lampComponent,
       raw_attributes:    rawAttributes,
+      data_quality:      dataQuality,
     };
 
     // ── 10. Override notice ──────────────────────────────────────────────
@@ -541,6 +560,9 @@ export class MatchDecisionExportSource {
       }
     }
 
+    const informationalAttrs: InformationalAttr[] =
+      (req.informational_attrs as InformationalAttr[] | null) ?? [];
+
     return {
       metadata,
       general_description: req.description ?? req.name,
@@ -550,6 +572,8 @@ export class MatchDecisionExportSource {
       is_override:         isOverride,
       override_reason:     overrideReason,
       no_candidate:        false,
+      is_placeholder:      isPlaceholder,
+      informational_attrs: informationalAttrs,
     };
   }
 
@@ -622,7 +646,11 @@ export class MatchDecisionExportSource {
       luminaire_component:   null,
       lamp_component:        null,
       raw_attributes:        {},
+      data_quality:          'uncharacterised',
     };
+
+    const informationalAttrs: InformationalAttr[] =
+      (req.informational_attrs as InformationalAttr[] | null) ?? [];
 
     return {
       metadata,
@@ -633,6 +661,8 @@ export class MatchDecisionExportSource {
       is_override:         false,
       override_reason:     null,
       no_candidate:        true,
+      is_placeholder:      false,
+      informational_attrs: informationalAttrs,
     };
   }
 }

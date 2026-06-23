@@ -145,6 +145,28 @@ async function resolveToCanonicalProductId(
 }
 
 /**
+ * Check whether a canonical product has estimated transmission provenance.
+ * Returns 'estimated_placeholder' when the product's transmission_provenance
+ * attribute is 'estimated', 'verified' otherwise. Null canonical ID → 'verified'.
+ */
+async function productDataQuality(
+  canonicalProductId: string | null,
+): Promise<'verified' | 'estimated_placeholder'> {
+  if (!canonicalProductId) return 'verified';
+  const [row] = await db
+    .select({ attribute_value: product_attribute_values.attribute_value })
+    .from(product_attribute_values)
+    .where(
+      and(
+        eq(product_attribute_values.canonical_product_id, canonicalProductId),
+        eq(product_attribute_values.attribute_key, 'transmission_provenance'),
+      ),
+    )
+    .limit(1);
+  return row?.attribute_value === 'estimated' ? 'estimated_placeholder' : 'verified';
+}
+
+/**
  * Resolve the full selection state for a requirement.
  * Returns the auto top-ranked candidate when no manual selection is stored.
  */
@@ -184,17 +206,21 @@ async function resolveSelectionState(requirementId: string) {
 
   if (!req.selected_candidate_type || !req.selected_candidate_id) {
     // No selection stored → auto mode
+    const resolvedId = autoDecision?.canonical_product_id ?? null;
+    const dataQuality = await productDataQuality(resolvedId);
     return {
       mode: autoDecision ? 'auto' : 'no_candidates' as const,
       needs_review: false,
       needs_review_reason: null as string | null,
       selected_canonical_product_id: null as string | null,
-      resolved_canonical_product_id: autoDecision?.canonical_product_id ?? null,
+      resolved_canonical_product_id: resolvedId,
       resolved_display_name: autoDecision?.display_name ?? null,
       resolved_fit_score: autoDecision?.fit_score ?? null,
       resolved_rank: autoDecision?.rank ?? null,
       resolved_status: (autoDecision?.status ?? null) as string | null,
       is_override: false,
+      data_quality: dataQuality,
+      is_placeholder: dataQuality === 'estimated_placeholder',
     };
   }
 
@@ -205,17 +231,21 @@ async function resolveSelectionState(requirementId: string) {
   );
 
   if (!selectedCanonicalId) {
+    const fallbackId = autoDecision?.canonical_product_id ?? null;
+    const dataQuality = await productDataQuality(fallbackId);
     return {
       mode: 'needs_review' as const,
       needs_review: true,
       needs_review_reason: 'Selected candidate no longer found in catalogue',
       selected_canonical_product_id: null,
-      resolved_canonical_product_id: autoDecision?.canonical_product_id ?? null,
+      resolved_canonical_product_id: fallbackId,
       resolved_display_name: autoDecision?.display_name ?? null,
       resolved_fit_score: autoDecision?.fit_score ?? null,
       resolved_rank: autoDecision?.rank ?? null,
       resolved_status: (autoDecision?.status ?? null) as string | null,
       is_override: req.selection_is_override,
+      data_quality: dataQuality,
+      is_placeholder: dataQuality === 'estimated_placeholder',
     };
   }
 
@@ -236,6 +266,8 @@ async function resolveSelectionState(requirementId: string) {
             : `Selected candidate is now ${selectedDecision.status} — review required`))
     : null;
 
+  const dataQuality = await productDataQuality(selectedCanonicalId);
+
   return {
     mode: (req.selection_is_override ? 'override' : 'manual') as 'manual' | 'override',
     needs_review: needsReview,
@@ -247,6 +279,8 @@ async function resolveSelectionState(requirementId: string) {
     resolved_rank: selectedDecision?.rank ?? null,
     resolved_status: (selectedDecision?.status ?? null) as string | null,
     is_override: req.selection_is_override,
+    data_quality: dataQuality,
+    is_placeholder: dataQuality === 'estimated_placeholder',
   };
 }
 

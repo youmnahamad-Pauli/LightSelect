@@ -479,6 +479,21 @@ export const api = {
         body: JSON.stringify({ document_id }),
         token,
       }),
+    download: async (token: string, docId: string, filename: string): Promise<void> => {
+      const res = await fetch(`${BASE_URL}/project-documents/${docId}/download`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error('Download failed');
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    },
   },
 
   matching: {
