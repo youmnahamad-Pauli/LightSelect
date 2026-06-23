@@ -97,15 +97,33 @@ For "attributes":
 - "value": the extracted value as a string.
 - "source_locator": a precise pointer to where in the document you read this value.
     Examples: "page 4, specification table, row WKL 3020, column CCT"
-              "page 2, order-code key: '30 = 3000K'"
+              "page 2, order-code key table, entry: '30 = 3000K'"
               "page 1, document header"
     Use null only for document-level fields (e.g. manufacturer name on cover page).
 - "resolution_method": how the value was determined:
     "table_read"        — read verbatim from an explicit table cell, row, or labelled spec entry in this document.
-    "legend_decoded"    — decoded from a model-code legend THAT IS PRINTED IN THIS DOCUMENT and
-                          whose relevant entry you can quote exactly in source_locator.
+    "legend_decoded"    — decoded from a model-code legend or order-code key table THAT IS PHYSICALLY
+                          PRINTED IN THIS DOCUMENT. The source_locator MUST name the page and the
+                          printed legend entry itself (e.g. "page 3, order-code key, entry: '/940 = 4000K CRI90'"),
+                          NOT the model code where you applied it.
+                          HARD GATE: before emitting legend_decoded, ask: can I quote the EXACT TEXT of
+                          the legend entry as printed on a specific page of this document? If the answer
+                          is no — if you are relying on training knowledge of a manufacturer's coding
+                          conventions (e.g. Philips /9XX = CRI90, Osram letter suffixes, etc.) rather
+                          than a printed legend in front of you — then legend_decoded is PROHIBITED.
+                          Use inferred_flagged with needs_review: true instead, or omit the attribute.
     "inferred_flagged"  — you have a plausible value but cannot point to an explicit source in this
                           document. Set needs_review: true. Use sparingly — prefer omitting the attribute.
+
+NAMED FAILURE MODE — training_knowledge_decoding:
+  Applying training knowledge of a manufacturer's model-code conventions to decode an attribute value
+  is PROHIBITED, even when you are confident the convention is correct. Common examples:
+  - Decoding CCT or CRI from Philips/Signify "/9XX", "/8XX" suffixes without a printed legend
+  - Decoding wattage from numeric prefixes without a printed key
+  - Decoding beam angle from letter codes without a printed optics table
+  If no legend is printed in this document, the value cannot be legend_decoded. Do not self-justify
+  by pointing to the model code itself as the "source" — the model code is not a legend.
+
 - "needs_review": true when resolution_method is "inferred_flagged"; false otherwise.
 - "confidence": 0.0 (uncertain) to 1.0 (verbatim, unambiguous). Set ≤ 0.5 when needs_review is true.
 - Omit an attribute entirely when you cannot locate it in the document — do not emit it as inferred_flagged
@@ -119,12 +137,13 @@ CRITICAL RULE — cct (colour temperature of THIS specific SKU):
     1. The specification table or datasheet row for this exact SKU lists a single CCT → use that number.
        Set resolution_method = "table_read". Set source_locator to the exact table reference, e.g.
        "page 4, specification table, row WKL 3020, column CCT".
-    2. This catalogue prints an order-code legend or key AND that legend entry is visible in this
-       document (e.g. a row "30 = 3000K" or key "3020 = 3000K, 20W") → decode the CCT from THIS
-       SKU's model code using ONLY that printed legend. Quote the exact legend entry in source_locator.
-       Set resolution_method = "legend_decoded".
+    2. This catalogue PRINTS an explicit order-code legend or key table mapping code segments to CCT values,
+       AND that legend is visible in this document — e.g. a printed row "'/940' = 4000K, CRI90" or a key
+       table "30 = 3000K, 40 = 4000K". You may then decode the CCT from THIS SKU's model code using
+       ONLY that printed mapping. The source_locator MUST quote the printed legend entry and page, not
+       just the model code. Set resolution_method = "legend_decoded".
     3. If neither applies — DO NOT emit a cct value at all. Do not use training knowledge of
-       naming conventions or common order-code patterns. Omit cct rather than guess.
+       naming conventions or common order-code patterns (see NAMED FAILURE MODE above). Omit cct rather than guess.
   NEVER assign the product family's full list of available CCTs to an individual SKU's cct attribute.
   That list belongs in series_cct_options (informational only — see below).
   Output format for cct: a plain integer or integer string, e.g. "3000" not "3000K" not "2700K, 3000K".
@@ -145,6 +164,37 @@ ${ATTRIBUTE_LIST}
 
 Products to detect: every item that has its own model code, order code, or distinct specification row.
 Different CCT or wattage options with separate model codes must each be a separate product entry.`;
+
+// ─── Provenance validation ─────────────────────────────────────────────────
+
+/**
+ * Returns true only when the source_locator references an actual printed
+ * legend or order-code key table in the document — not merely the location
+ * of the model code that was decoded.
+ *
+ * Used in two places:
+ *   1. coerceProduct() — at LLM parse time, before data reaches the writer.
+ *   2. registry-writer.ts — at DB write time, as a hard gate regardless of
+ *      how the DetectedProduct was constructed.
+ */
+export function isLegitLegendSourceLocator(sl: string | null): boolean {
+  if (!sl) return false;
+  const lower = sl.toLowerCase();
+  return (
+    lower.includes('legend') ||
+    lower.includes('order-code key') ||
+    lower.includes('order code key') ||
+    lower.includes('code key') ||
+    lower.includes('key table') ||
+    lower.includes('key box') ||
+    lower.includes(' key,') ||
+    lower.includes(' key:') ||
+    lower.includes(' key ') ||
+    // Quoted mapping patterns like "entry: '/940 = 4000K'"
+    /entry:\s*['"]/.test(lower) ||
+    /entry:\s+[/']/.test(lower)
+  );
+}
 
 // ─── LLM client ────────────────────────────────────────────────────────────
 
@@ -178,15 +228,30 @@ function coerceProduct(raw: RawProductItem): DetectedProduct | null {
     if (typeof val !== 'object' || val === null) continue;
     const v = val as Record<string, unknown>;
     if (typeof v.value !== 'string' || typeof v.confidence !== 'number') continue;
-    const resolution_method: ResolutionMethod =
+    const source_locator: string | null = typeof v.source_locator === 'string' ? v.source_locator : null;
+    let resolution_method: ResolutionMethod =
       typeof v.resolution_method === 'string' &&
       (VALID_METHODS as readonly string[]).includes(v.resolution_method)
         ? (v.resolution_method as ResolutionMethod)
         : 'table_read';
+
+    // Hard gate: legend_decoded without a legitimate legend source_locator is a policy violation.
+    // Downgrade to inferred_flagged so the attribute is flagged for human review regardless of
+    // what the model returned. Catches training_knowledge_decoding even when the prompt fails to.
+    if (resolution_method === 'legend_decoded' && !isLegitLegendSourceLocator(source_locator)) {
+      console.warn(
+        `[coerce] legend_decoded guard: attribute "${key}" source_locator does not reference a ` +
+        `printed legend ("${source_locator ?? 'null'}"). Downgrading to inferred_flagged.`,
+      );
+      resolution_method = 'inferred_flagged';
+    }
+
     attributes[key] = {
       value: v.value,
-      confidence: Math.min(1, Math.max(0, v.confidence)),
-      source_locator: typeof v.source_locator === 'string' ? v.source_locator : null,
+      confidence: resolution_method === 'inferred_flagged'
+        ? Math.min(0.5, Math.min(1, Math.max(0, v.confidence)))
+        : Math.min(1, Math.max(0, v.confidence)),
+      source_locator,
       resolution_method,
       needs_review: resolution_method === 'inferred_flagged' || v.needs_review === true,
     };
@@ -199,6 +264,28 @@ function coerceProduct(raw: RawProductItem): DetectedProduct | null {
     pages: [Number(raw.pages[0]), Number(raw.pages[1])],
     attributes,
   };
+}
+
+// Walk the JSON text to find the index of the closing bracket/brace that ends the
+// top-level object or array. Returns -1 if no valid JSON object/array is found.
+// Used to discard prose that the model appends after the closing fence.
+function findJsonObjectEnd(text: string): number {
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (escaped) { escaped = false; continue; }
+    if (ch === '\\' && inString) { escaped = true; continue; }
+    if (ch === '"') { inString = !inString; continue; }
+    if (inString) continue;
+    if (ch === '{' || ch === '[') depth++;
+    if (ch === '}' || ch === ']') {
+      depth--;
+      if (depth === 0) return i;
+    }
+  }
+  return -1;
 }
 
 export async function detectAndExtractFromCatalogue(params: {
@@ -226,9 +313,10 @@ export async function detectAndExtractFromCatalogue(params: {
     ? ` Restrict extraction to products whose model code contains any of: ${modelFilter.map((f) => `"${f}"`).join(', ')}. Skip all other products.`
     : '';
 
-  const response = await client.messages.create({
+  // Use streaming to support large responses (> ~60k output tokens requires streaming).
+  const stream = client.messages.stream({
     model,
-    max_tokens: 16000,
+    max_tokens: 64000,
     system: SYSTEM_PROMPT,
     messages: [
       {
@@ -250,6 +338,7 @@ export async function detectAndExtractFromCatalogue(params: {
       },
     ],
   });
+  const response = await stream.finalMessage();
 
   const elapsed_ms = Date.now() - startMs;
 
@@ -260,8 +349,19 @@ export async function detectAndExtractFromCatalogue(params: {
 
   let parsed: unknown;
   try {
-    // Strip markdown fences if the model included them despite instructions
-    const cleaned = textBlock.text.trim().replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '');
+    // Strip markdown fences; also strip any leading prose before the first '{' and
+    // any trailing content after the JSON closes (the model may wrap JSON in a fence
+    // and then add a closing prose block after the ``` — standard regex strips won't catch that).
+    let cleaned = textBlock.text.trim().replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '');
+    if (!cleaned.startsWith('{') && !cleaned.startsWith('[')) {
+      const jsonStart = cleaned.indexOf('{');
+      if (jsonStart !== -1) cleaned = cleaned.slice(jsonStart);
+    }
+    // Find the end of the top-level JSON object/array and discard anything after it.
+    const jsonEnd = findJsonObjectEnd(cleaned);
+    if (jsonEnd !== -1 && jsonEnd < cleaned.length - 1) {
+      cleaned = cleaned.slice(0, jsonEnd + 1);
+    }
     parsed = JSON.parse(cleaned);
   } catch (err) {
     throw new Error(
