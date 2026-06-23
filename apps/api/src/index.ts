@@ -33,6 +33,7 @@ import {
   submittalProjectRouter,
   projectDocItemLinkRouter,
 } from './routes/submittal';
+import { conversationRouter } from './routes/conversation';
 import { errorHandler } from './middleware/error-handler';
 
 const app = express();
@@ -85,6 +86,7 @@ app.use('/submittal-templates', submittalTemplateRouter);
 app.use('/submittal-template-items', submittalTemplateItemRouter);
 app.use('/projects', submittalProjectRouter);
 app.use('/project-documents', projectDocItemLinkRouter);
+app.use('/projects', conversationRouter);
 
 app.use(errorHandler);
 

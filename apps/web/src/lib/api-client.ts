@@ -60,6 +60,8 @@ import type {
   SubmittalGateCheckResult,
   PackageManifest,
   PackageGenerateResult,
+  ConversationMessage,
+  ConversationResult,
 } from '@/types';
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
@@ -635,6 +637,20 @@ export const api = {
       ),
     aecomExportUrl: (requirementId: string) =>
       `${BASE_URL}/matching/requirements/${requirementId}/export/aecom`,
+  },
+
+  conversation: {
+    send: (
+      token: string,
+      projectId: string,
+      message: string,
+      history: ConversationMessage[] = [],
+    ) =>
+      request<ConversationResult>(`/projects/${projectId}/conversation`, {
+        method: 'POST',
+        body: JSON.stringify({ message, history }),
+        token,
+      }),
   },
 };
 
