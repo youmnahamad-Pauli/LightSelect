@@ -1,12 +1,12 @@
-# Ingestion Review — ILTI_LUCE_2024_Profiles-and-LED-strips-brochure.pdf
+# Ingestion Review — luxspace-pro-dn5xx.pdf
 
-**Ingested at:** 2026-06-23 12:05
-**Source file:** `C:\Users\julia\lightselect\ingestion-input\ILTI_LUCE_2024_Profiles-and-LED-strips-brochure.pdf`
+**Ingested at:** 2026-06-23 14:09
+**Source file:** `C:\Users\julia\lightselect\ingestion-input\luxspace-pro-dn5xx.pdf`
 **Org ID:** `e15f7fa1-1ca5-4aba-8d07-f6cc88d00a3e`
-**Products detected:** 6
-**Products written:** 6
-**Total attribute values stored:** 108
-**LLM:** claude-sonnet-4-6 · in=68709 out=9441 (114978ms)
+**Products detected:** 22
+**Products written:** 22
+**Total attribute values stored:** 386
+**LLM:** claude-sonnet-4-6 · in=15552 out=34604 (290198ms)
 
 > All values have `value_state = 'extracted'` and require human review.
 > To confirm a value, update the row in `product_attribute_values` and set `value_state = 'confirmed'`.
@@ -14,92 +14,300 @@
 
 ---
 
-## ILTI LUCE — 1-WKL-3020-1-00 ✓ auto_merged _(merged into existing)_
+## Philips — DN589B LED10/940 P8PSU D75 MB G2 ⚠️ needs_review _(merged into existing)_
 
 | Field | Value |
 |-------|-------|
-| Canonical ID | `cee2f8eb-99cb-427d-a8a1-5af28390aae5` |
-| Manufacturer | ILTI LUCE |
-| Model code | 1-WKL-3020-1-00 |
-| Source pages | p.28 |
-| Attributes written | 18 |
+| Canonical ID | `1c80d029-73b8-4ec8-aae8-f236414f9398` |
+| Manufacturer | Philips |
+| Model code | DN589B LED10/940 P8PSU D75 MB G2 |
+| Source pages | pp.4–5 |
+| Attributes written | 19 |
 | Attributes skipped | 0 |
-| Attributes needing review | 0 |
+| Attributes needing review | 2 |
 
 
-## ILTI LUCE — 1-WKL-3021-1-00 ✓ auto_merged _(merged into existing)_
+## Philips — DN589B LED10/930 P8PSU D75 MB G2 ⚠️ needs_review _(merged into existing)_
 
 | Field | Value |
 |-------|-------|
-| Canonical ID | `6833f3d0-38c3-4fc0-9c8f-227dbdf4d944` |
-| Manufacturer | ILTI LUCE |
-| Model code | 1-WKL-3021-1-00 |
-| Source pages | p.28 |
-| Attributes written | 18 |
+| Canonical ID | `2c4660fc-a3ec-40bb-b2e6-d6b699d99b6b` |
+| Manufacturer | Philips |
+| Model code | DN589B LED10/930 P8PSU D75 MB G2 |
+| Source pages | pp.4–5 |
+| Attributes written | 19 |
 | Attributes skipped | 0 |
-| Attributes needing review | 0 |
+| Attributes needing review | 2 |
 
 
-## ILTI LUCE — 1-WKL-3022-1-00 ✓ auto_merged _(merged into existing)_
+## Philips — DN589B LED10/940 P8PSU D75 WB G2 ⚠️ needs_review _(merged into existing)_
 
 | Field | Value |
 |-------|-------|
-| Canonical ID | `7628d62b-8795-4817-828a-3d0288b87bd4` |
-| Manufacturer | ILTI LUCE |
-| Model code | 1-WKL-3022-1-00 |
-| Source pages | p.28 |
+| Canonical ID | `9ebca4b2-b422-4575-a347-703f2c9c06b3` |
+| Manufacturer | Philips |
+| Model code | DN589B LED10/940 P8PSU D75 WB G2 |
+| Source pages | pp.4–5 |
 | Attributes written | 18 |
 | Attributes skipped | 0 |
-| Attributes needing review | 0 |
+| Attributes needing review | 1 |
 
 
-## ILTI LUCE — 1-WKL-3025-0-00 ✓ auto_merged _(merged into existing)_
+## Philips — DN589B LED10/930 P8PSU D75 WB G2 ⚠️ needs_review _(merged into existing)_
 
 | Field | Value |
 |-------|-------|
-| Canonical ID | `473f0f41-682f-412e-a050-96dca43726d8` |
-| Manufacturer | ILTI LUCE |
-| Model code | 1-WKL-3025-0-00 |
-| Source pages | p.28 |
+| Canonical ID | `447ba0f4-19d4-4f09-b4e2-ffb5f10e2d88` |
+| Manufacturer | Philips |
+| Model code | DN589B LED10/930 P8PSU D75 WB G2 |
+| Source pages | pp.4–5 |
 | Attributes written | 18 |
 | Attributes skipped | 0 |
-| Attributes needing review | 0 |
+| Attributes needing review | 1 |
 
 
-## ILTI LUCE — 1-WKL-3026-0-00 ✓ auto_merged _(merged into existing)_
+## Philips — DN589B LED10/940 P8PSU D75 NB G2 ⚠️ needs_review _(merged into existing)_
 
 | Field | Value |
 |-------|-------|
-| Canonical ID | `28bce2f1-4a7b-499d-9f1c-8a56a7a4a414` |
-| Manufacturer | ILTI LUCE |
-| Model code | 1-WKL-3026-0-00 |
-| Source pages | p.28 |
-| Attributes written | 18 |
+| Canonical ID | `bfa3464a-9ef1-4897-ae66-5411777a3d77` |
+| Manufacturer | Philips |
+| Model code | DN589B LED10/940 P8PSU D75 NB G2 |
+| Source pages | pp.4–5 |
+| Attributes written | 19 |
 | Attributes skipped | 0 |
-| Attributes needing review | 0 |
+| Attributes needing review | 2 |
 
 
-## ILTI LUCE — 1-WKL-3027-0-00 ✓ auto_merged _(merged into existing)_
+## Philips — DN589B LED10/930 P8PSU D75 NB G2 ⚠️ needs_review _(merged into existing)_
 
 | Field | Value |
 |-------|-------|
-| Canonical ID | `a26f0c91-8a93-452d-ac3a-e59afe38908c` |
-| Manufacturer | ILTI LUCE |
-| Model code | 1-WKL-3027-0-00 |
-| Source pages | p.28 |
-| Attributes written | 18 |
+| Canonical ID | `26aef583-8599-4185-90ae-26621d1c2838` |
+| Manufacturer | Philips |
+| Model code | DN589B LED10/930 P8PSU D75 NB G2 |
+| Source pages | pp.4–5 |
+| Attributes written | 19 |
 | Attributes skipped | 0 |
-| Attributes needing review | 0 |
+| Attributes needing review | 2 |
+
+
+## Philips — DN589B LED10/940 P8PSU D100 WB G2 ⚠️ needs_review _(merged into existing)_
+
+| Field | Value |
+|-------|-------|
+| Canonical ID | `4d821a1a-3568-4789-b295-8be88e16dbfd` |
+| Manufacturer | Philips |
+| Model code | DN589B LED10/940 P8PSU D100 WB G2 |
+| Source pages | pp.4–5 |
+| Attributes written | 19 |
+| Attributes skipped | 0 |
+| Attributes needing review | 1 |
+
+
+## Philips — DN589B LED10/930 P8PSU D100 WB G2 ⚠️ needs_review _(merged into existing)_
+
+| Field | Value |
+|-------|-------|
+| Canonical ID | `8ab6f92d-eaf9-4469-bf14-521e568742b6` |
+| Manufacturer | Philips |
+| Model code | DN589B LED10/930 P8PSU D100 WB G2 |
+| Source pages | pp.4–5 |
+| Attributes written | 19 |
+| Attributes skipped | 0 |
+| Attributes needing review | 1 |
+
+
+## Philips — DN589B LED10/840 P8PSU D100 WB WP G2 ⚠️ needs_review _(merged into existing)_
+
+| Field | Value |
+|-------|-------|
+| Canonical ID | `22832a57-2696-4500-a46a-72acde145fa7` |
+| Manufacturer | Philips |
+| Model code | DN589B LED10/840 P8PSU D100 WB WP G2 |
+| Source pages | pp.4–5 |
+| Attributes written | 16 |
+| Attributes skipped | 0 |
+| Attributes needing review | 1 |
+
+
+## Philips — DN589B LED10/940 P8PSD D100 WB G2 ⚠️ needs_review _(merged into existing)_
+
+| Field | Value |
+|-------|-------|
+| Canonical ID | `5a1e1551-405b-4ffe-b937-08394479f3a7` |
+| Manufacturer | Philips |
+| Model code | DN589B LED10/940 P8PSD D100 WB G2 |
+| Source pages | pp.4–5 |
+| Attributes written | 16 |
+| Attributes skipped | 0 |
+| Attributes needing review | 2 |
+
+
+## Philips — DN589B LED10/930 P8PSD D100 WB G2 ⚠️ needs_review _(merged into existing)_
+
+| Field | Value |
+|-------|-------|
+| Canonical ID | `cd59747a-2c58-4d4c-a49e-29eec83b21d5` |
+| Manufacturer | Philips |
+| Model code | DN589B LED10/930 P8PSD D100 WB G2 |
+| Source pages | pp.4–5 |
+| Attributes written | 16 |
+| Attributes skipped | 0 |
+| Attributes needing review | 2 |
+
+
+## Philips — DN589B LED11/840 P8PSU D125 VWB-M G2 ⚠️ needs_review _(merged into existing)_
+
+| Field | Value |
+|-------|-------|
+| Canonical ID | `f570622e-4d7b-468d-ab36-aabf9f2ac5b5` |
+| Manufacturer | Philips |
+| Model code | DN589B LED11/840 P8PSU D125 VWB-M G2 |
+| Source pages | pp.4–5 |
+| Attributes written | 19 |
+| Attributes skipped | 0 |
+| Attributes needing review | 1 |
+
+
+## Philips — DN589B LED11/830 P8PSU D125 VWB-M G2 ⚠️ needs_review _(merged into existing)_
+
+| Field | Value |
+|-------|-------|
+| Canonical ID | `be6f1c19-7b57-466d-aebd-d56de6d3e13a` |
+| Manufacturer | Philips |
+| Model code | DN589B LED11/830 P8PSU D125 VWB-M G2 |
+| Source pages | pp.4–5 |
+| Attributes written | 19 |
+| Attributes skipped | 0 |
+| Attributes needing review | 1 |
+
+
+## Philips — DN589B LED11/840 PBPSU D125 WB G2 ⚠️ needs_review _(merged into existing)_
+
+| Field | Value |
+|-------|-------|
+| Canonical ID | `d80f537e-4ee8-4cfd-a240-fab12013969d` |
+| Manufacturer | Philips |
+| Model code | DN589B LED11/840 PBPSU D125 WB G2 |
+| Source pages | pp.4–5 |
+| Attributes written | 16 |
+| Attributes skipped | 0 |
+| Attributes needing review | 1 |
+
+
+## Philips — DN589B LED11/830 PBPSU D125 WB G2 ⚠️ needs_review _(merged into existing)_
+
+| Field | Value |
+|-------|-------|
+| Canonical ID | `9c7cd6be-3f23-4188-aeb8-b496d066354c` |
+| Manufacturer | Philips |
+| Model code | DN589B LED11/830 PBPSU D125 WB G2 |
+| Source pages | pp.4–5 |
+| Attributes written | 16 |
+| Attributes skipped | 0 |
+| Attributes needing review | 1 |
+
+
+## Philips — DN589B LED11/840 PBPSD D125 VWB-M G2 ⚠️ needs_review _(merged into existing)_
+
+| Field | Value |
+|-------|-------|
+| Canonical ID | `1f5b765a-f4f2-4362-8ef9-0c882cedad8a` |
+| Manufacturer | Philips |
+| Model code | DN589B LED11/840 PBPSD D125 VWB-M G2 |
+| Source pages | pp.4–5 |
+| Attributes written | 16 |
+| Attributes skipped | 0 |
+| Attributes needing review | 2 |
+
+
+## Philips — DN589B LED11/830 P8PSD D125 VWB-M G2 ⚠️ needs_review _(merged into existing)_
+
+| Field | Value |
+|-------|-------|
+| Canonical ID | `ba067c1c-70ad-49ce-af0d-348506c9210e` |
+| Manufacturer | Philips |
+| Model code | DN589B LED11/830 P8PSD D125 VWB-M G2 |
+| Source pages | pp.4–5 |
+| Attributes written | 16 |
+| Attributes skipped | 0 |
+| Attributes needing review | 2 |
+
+
+## Philips — DN589B LED11/840 PBPSD D125 WB G2 ⚠️ needs_review _(merged into existing)_
+
+| Field | Value |
+|-------|-------|
+| Canonical ID | `d6859186-8c80-4116-8a29-dddcd3d8bb35` |
+| Manufacturer | Philips |
+| Model code | DN589B LED11/840 PBPSD D125 WB G2 |
+| Source pages | p.5 |
+| Attributes written | 16 |
+| Attributes skipped | 0 |
+| Attributes needing review | 2 |
+
+
+## Philips — DN589B LED11/830 PBPSD D125 WB G2 ⚠️ needs_review _(merged into existing)_
+
+| Field | Value |
+|-------|-------|
+| Canonical ID | `0751baa7-ed7a-4988-9e34-4f784cb63bdc` |
+| Manufacturer | Philips |
+| Model code | DN589B LED11/830 PBPSD D125 WB G2 |
+| Source pages | p.5 |
+| Attributes written | 16 |
+| Attributes skipped | 0 |
+| Attributes needing review | 2 |
+
+
+## Philips — DN589B LED12/840 PBPSU D150 WB G2 ⚠️ needs_review _(merged into existing)_
+
+| Field | Value |
+|-------|-------|
+| Canonical ID | `da51a47b-4927-41a4-a8fe-7ced9b0e5d06` |
+| Manufacturer | Philips |
+| Model code | DN589B LED12/840 PBPSU D150 WB G2 |
+| Source pages | p.5 |
+| Attributes written | 19 |
+| Attributes skipped | 0 |
+| Attributes needing review | 1 |
+
+
+## Philips — DN589B LED12/830 PBPSU D150 WB G2 ⚠️ needs_review _(merged into existing)_
+
+| Field | Value |
+|-------|-------|
+| Canonical ID | `bfbf74e7-aeb1-49e8-abd0-505cb98da606` |
+| Manufacturer | Philips |
+| Model code | DN589B LED12/830 PBPSU D150 WB G2 |
+| Source pages | p.5 |
+| Attributes written | 19 |
+| Attributes skipped | 0 |
+| Attributes needing review | 1 |
+
+
+## Philips — DN589B LED12/840 P8PSD D150 WB G2 ⚠️ needs_review _(merged into existing)_
+
+| Field | Value |
+|-------|-------|
+| Canonical ID | `169a209a-557f-4373-8189-b117475545a1` |
+| Manufacturer | Philips |
+| Model code | DN589B LED12/840 P8PSD D150 WB G2 |
+| Source pages | p.5 |
+| Attributes written | 16 |
+| Attributes skipped | 0 |
+| Attributes needing review | 2 |
 
 
 ---
 
 ## Accuracy & Uncertainty Summary
 
-- **6** product(s) extracted
+- **22** product(s) extracted
 - **0** product(s) have no model code → flagged `needs_review`
-- **6** product(s) merged into an existing canonical record
-- **0** attribute values flagged `inferred_flagged` (needs_review)
+- **22** product(s) merged into an existing canonical record
+- **33** attribute values flagged `inferred_flagged` (needs_review)
 - Average **18** attribute values per product
 
 All values are **extracted** (not confirmed). Confidence scores are stored in
@@ -115,13 +323,13 @@ SELECT cp.display_name, cp.review_status, cp.review_notes,
        pav.resolution_method, pav.source_locator, pav.conflict_notes
 FROM canonical_products cp
 JOIN product_attribute_values pav ON pav.canonical_product_id = cp.id
-WHERE cp.review_notes LIKE 'Ingested from: ILTI_LUCE_2024_Profiles-and-LED-strips-brochure.pdf%'
+WHERE cp.review_notes LIKE 'Ingested from: luxspace-pro-dn5xx.pdf%'
 ORDER BY cp.display_name, pav.attribute_key;
 ```
 
 ### Needs human decision
 
-- 6 product(s) were merged into existing canonical records. Verify the merge is correct.
+- 22 product(s) were merged into existing canonical records. Verify the merge is correct.
 - `merge_type = 'manual'` is used for catalogue-ingested sources (no `products` table row exists). A new merge_type (e.g. `catalogue_ingestion`) could be added in a future schema migration to distinguish this provenance more precisely.
 - Variant handling: if a product has multiple CCT or wattage options with the same model code, only the "primary" value was extracted. The notes attribute contains variant information. A future enhancement could create separate canonical records per variant.
 - `org_id` is required by the schema. The catalogue ingestion must always be associated with a specific org. Consider whether a system/library org concept is needed for manufacturer-level catalogues shared across orgs.
