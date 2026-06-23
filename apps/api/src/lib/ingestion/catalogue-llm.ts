@@ -226,9 +226,10 @@ export async function detectAndExtractFromCatalogue(params: {
     ? ` Restrict extraction to products whose model code contains any of: ${modelFilter.map((f) => `"${f}"`).join(', ')}. Skip all other products.`
     : '';
 
-  const response = await client.messages.create({
+  // Use streaming to support large responses (> ~60k output tokens requires streaming).
+  const stream = client.messages.stream({
     model,
-    max_tokens: 16000,
+    max_tokens: 64000,
     system: SYSTEM_PROMPT,
     messages: [
       {
@@ -250,6 +251,7 @@ export async function detectAndExtractFromCatalogue(params: {
       },
     ],
   });
+  const response = await stream.finalMessage();
 
   const elapsed_ms = Date.now() - startMs;
 
@@ -260,8 +262,13 @@ export async function detectAndExtractFromCatalogue(params: {
 
   let parsed: unknown;
   try {
-    // Strip markdown fences if the model included them despite instructions
-    const cleaned = textBlock.text.trim().replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '');
+    // Strip markdown fences; also strip any leading prose before the first '{' —
+    // complex layouts can cause the model to reason out loud before emitting JSON.
+    let cleaned = textBlock.text.trim().replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '');
+    if (!cleaned.startsWith('{') && !cleaned.startsWith('[')) {
+      const jsonStart = cleaned.indexOf('{');
+      if (jsonStart !== -1) cleaned = cleaned.slice(jsonStart);
+    }
     parsed = JSON.parse(cleaned);
   } catch (err) {
     throw new Error(
